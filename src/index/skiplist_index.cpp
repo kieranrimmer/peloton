@@ -15,7 +15,10 @@
 #include "index/index_key.h"
 #include "index/scan_optimizer.h"
 #include "statistics/stats_aggregator.h"
+#include "settings/settings_manager.h"
 #include "storage/tuple.h"
+
+
 
 namespace peloton {
 namespace index {
@@ -46,6 +49,24 @@ bool SKIPLIST_INDEX_TYPE::InsertEntry(
     UNUSED_ATTRIBUTE ItemPointer *value) {
   bool ret = false;
   // TODO: Add your implementation here
+  KeyType index_key;
+  index_key.SetFromKey(key);
+  if(HasUniqueKeys() == true) {
+    ret = container.Insert(index_key, value, true);
+  } else {
+    ret = container.Insert(index_key, value, false);
+  }
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(settings::SettingId::stats_mode)) != StatsType::INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexInserts(metadata);
+  }
+
+  // NOTE: If I use index_key.GetInfo() here, I always get an empty key?
+  LOG_TRACE("InsertEntry(key=%s, val=%s) [%s]",
+            key->GetInfo().c_str(),
+            IndexUtil::GetInfo(value).c_str(),
+            (ret ? "SUCCESS" : "FAIL"));
+
   return ret;
 }
 
@@ -59,7 +80,25 @@ bool SKIPLIST_INDEX_TYPE::DeleteEntry(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE ItemPointer *value) {
   bool ret = false;
-  // TODO: Add your implementation here
+
+  KeyType index_key;
+  index_key.SetFromKey(key);
+
+  size_t delete_count = 0;
+
+  // In Delete() since we just use the value for comparison (i.e. read-only)
+  // it is unnecessary for us to allocate memory
+  ret = container.Delete(index_key, value);
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(settings::SettingId::stats_mode)) != StatsType::INVALID) {
+      stats::BackendStatsContext::GetInstance()->IncrementIndexDeletes(
+              delete_count, metadata);
+  }
+
+  LOG_TRACE("DeleteEntry(key=%s, val=%s) [%s]",
+            key->GetInfo().c_str(),
+            IndexUtil::GetInfo(value).c_str(),
+            (ret ? "SUCCESS" : "FAIL"));
   return ret;
 }
 
@@ -70,6 +109,11 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
     UNUSED_ATTRIBUTE std::function<bool(const void *)> predicate) {
   bool ret = false;
   // TODO: Add your implementation here
+  KeyType index_key;
+  index_key.SetFromKey(key);
+  if (predicate(nullptr)) {
+    container.Insert(index_key, value, HasUniqueKeys());
+  }
   return ret;
 }
 
@@ -159,6 +203,9 @@ template class SkipListIndex<
 // Tuple key
 template class SkipListIndex<TupleKey, ItemPointer *, TupleKeyComparator,
                              TupleKeyEqualityChecker, ItemPointerComparator>;
+
+
+
 
 }  // namespace index
 }  // namespace peloton
