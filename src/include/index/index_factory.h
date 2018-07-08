@@ -16,6 +16,10 @@
 
 #include "index/index.h"
 
+#include "index/skiplist.h"
+
+#include "index/index_key.h"
+
 namespace peloton {
 namespace index {
 
@@ -28,6 +32,8 @@ class IndexFactory {
  public:
   /// Get an index with required attributes
   static Index *GetIndex(IndexMetadata *metadata);
+
+  static SkipList<GenericKey<8>, ItemPointer *, FastGenericComparator<8>, GenericEqualityChecker<8>, ItemPointerComparator> *getSkipList();
 
  private:
   static std::string GetInfo(IndexMetadata *metadata,

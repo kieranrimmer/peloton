@@ -24,6 +24,18 @@
 namespace peloton {
 namespace index {
 
+  SkipList<GenericKey<8>, ItemPointer *,
+        FastGenericComparator<8>, GenericEqualityChecker<8>,
+        ItemPointerComparator>
+  *IndexFactory::getSkipList() {
+    SkipList<GenericKey<8>, ItemPointer *,
+            FastGenericComparator<8>, GenericEqualityChecker<8>,
+    ItemPointerComparator> *skipList =  new SkipList<GenericKey<8>, ItemPointer *,
+          FastGenericComparator<8>, GenericEqualityChecker<8>,
+          ItemPointerComparator>();
+    return skipList;
+}
+
 Index *IndexFactory::GetIndex(IndexMetadata *metadata) {
   LOG_TRACE("Creating index %s", metadata->GetName().c_str());
 

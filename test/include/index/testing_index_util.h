@@ -30,6 +30,8 @@ class TestingIndexUtil {
   // Test Cases
   //===--------------------------------------------------------------------===//
 
+  static void NoOpTest(IndexType index_type);
+
   static void BasicTest(IndexType index_type);
 
   static void MultiMapInsertTest(IndexType index_type);
@@ -59,6 +61,8 @@ class TestingIndexUtil {
       const IndexType index_type, const bool unique_keys);
 
   static index::Index *BuildIndex(IndexType index_type, bool unique_keys);
+
+  static index::Index *BuildSkipListIndex(IndexType index_type, bool unique_keys);
 
   static void DestroyIndex(index::Index *index);
 

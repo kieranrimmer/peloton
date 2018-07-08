@@ -24,12 +24,49 @@
 #include "storage/tuple.h"
 #include "type/value_factory.h"
 
+#include "index/skiplist.h"
+
 namespace peloton {
 namespace test {
 
 std::shared_ptr<ItemPointer> TestingIndexUtil::item0(new ItemPointer(120, 5));
 std::shared_ptr<ItemPointer> TestingIndexUtil::item1(new ItemPointer(120, 7));
 std::shared_ptr<ItemPointer> TestingIndexUtil::item2(new ItemPointer(123, 19));
+
+void TestingIndexUtil::NoOpTest(const IndexType index_type) {
+  auto pool = TestingHarness::GetInstance().GetTestingPool();
+  std::vector<ItemPointer *> location_ptrs;
+
+  // INDEX
+  std::unique_ptr<index::Index, void (*)(index::Index *)> index(
+          TestingIndexUtil::BuildIndex(index_type, false), DestroyIndex);
+   const catalog::Schema *key_schema = index->GetKeySchema();
+
+  std::unique_ptr<storage::Tuple> key0(new storage::Tuple(key_schema, true));
+  key0->SetValue(0, type::ValueFactory::GetIntegerValue(100), pool);
+  key0->SetValue(1, type::ValueFactory::GetVarcharValue("a"), pool);
+  LOG_DEBUG("key0[0]->value='%s'", key0->GetValue(0).ToString().c_str());
+  LOG_DEBUG("key0[1]->value='%s'", key0->GetValue(1).ToString().c_str());
+  key0->SetValue(1, type::ValueFactory::GetVarcharValue("allo allo"), pool);
+  LOG_DEBUG("key0[1]->value='%s'", key0->GetValue(1).ToString().c_str());
+
+  // INSERT
+  index->InsertEntry(key0.get(), TestingIndexUtil::item0.get());
+//
+//  // SCAN
+//  index->ScanKey(key0.get(), location_ptrs);
+//  EXPECT_EQ(1, location_ptrs.size());
+//  EXPECT_EQ(TestingIndexUtil::item0->block, location_ptrs[0]->block);
+//  location_ptrs.clear();
+//
+//  // DELETE
+//  index->DeleteEntry(key0.get(), TestingIndexUtil::item0.get());
+//
+//  index->ScanKey(key0.get(), location_ptrs);
+//  EXPECT_EQ(0, location_ptrs.size());
+//  location_ptrs.clear();
+}
+
 
 void TestingIndexUtil::BasicTest(const IndexType index_type) {
   auto pool = TestingHarness::GetInstance().GetTestingPool();
@@ -732,6 +769,24 @@ index::Index *TestingIndexUtil::BuildIndex(const IndexType index_type,
   auto index_metadata = BuildTestIndexMetadata(index_type, unique_keys);
 
   // Build index
+  auto *index = index::IndexFactory::GetIndex(index_metadata.release());
+
+  // Actually this will never be hit since if index creation fails an
+  // exception would be raised (maybe out of memory would result in a nullptr?
+  // Anyway leave it here)
+  EXPECT_TRUE(index != nullptr);
+  EXPECT_EQ(unique_keys, index->HasUniqueKeys());
+
+  return index;
+}
+
+index::Index *TestingIndexUtil::BuildSkipListIndex(const IndexType index_type,
+                                           const bool unique_keys) {
+  LOG_DEBUG("Build index type: %s", IndexTypeToString(index_type).c_str());
+
+  // Build metadata
+  auto index_metadata = BuildTestIndexMetadata(index_type, unique_keys);
+
   auto *index = index::IndexFactory::GetIndex(index_metadata.release());
 
   // Actually this will never be hit since if index creation fails an

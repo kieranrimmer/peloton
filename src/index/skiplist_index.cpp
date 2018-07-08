@@ -30,7 +30,9 @@ SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
       // Key "less than" relation comparator
       comparator{},
       // Key equality checker
-      equals{} {
+      equals{},
+      //
+      container{} {
   // TODO: Add your implementation here
   return;
 }
@@ -161,6 +163,16 @@ SKIPLIST_TEMPLATE_ARGUMENTS
 void SKIPLIST_INDEX_TYPE::ScanKey(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE std::vector<ValueType> &result) {
+  KeyType index_key;
+  index_key.SetFromKey(key);
+
+  // This function in BwTree fills a given vector
+  container.GetValue(index_key, result);
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(settings::SettingId::stats_mode)) != StatsType::INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
+            result.size(), metadata);
+  }
   // TODO: Add your implementation here
   return;
 }

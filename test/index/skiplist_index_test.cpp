@@ -16,6 +16,9 @@
 #include "common/internal_types.h"
 #include "index/testing_index_util.h"
 
+// #include "index/skiplist.h"
+
+
 namespace peloton {
 namespace test {
 
@@ -26,7 +29,21 @@ namespace test {
 class SkipListIndexTests : public PelotonTest {};
 
 TEST_F(SkipListIndexTests, BasicTest) {
-  // TestingIndexUtil::BasicTest(IndexType::SKIPLIST);
+
+  EXPECT_EQ(2, 1+1);
+}
+
+
+TEST_F(SkipListIndexTests, NoOpTest) {
+
+  auto UNUSED_ATTRIBUTE skipList = index::IndexFactory::getSkipList();
+
+  EXPECT_EQ(skipList->getTopLevel(), 9);
+
+
+  // skipList->startNode->getMaxHeight();
+
+  TestingIndexUtil::NoOpTest(IndexType::SKIPLIST);
   EXPECT_EQ(2, 1+1);
 }
 
