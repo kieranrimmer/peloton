@@ -23,7 +23,7 @@
 namespace peloton {
 namespace index {
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
     :  // Base class
       Index{metadata},
@@ -37,7 +37,7 @@ SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
   return;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 SKIPLIST_INDEX_TYPE::~SkipListIndex() {}
 
 /*
@@ -45,7 +45,7 @@ SKIPLIST_INDEX_TYPE::~SkipListIndex() {}
  *
  * If the key value pair already exists in the map, just return false
  */
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_INDEX_TYPE::InsertEntry(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE ItemPointer *value) {
@@ -77,7 +77,7 @@ bool SKIPLIST_INDEX_TYPE::InsertEntry(
  *
  * If the key-value pair does not exists yet in the map return false
  */
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_INDEX_TYPE::DeleteEntry(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE ItemPointer *value) {
@@ -104,7 +104,7 @@ bool SKIPLIST_INDEX_TYPE::DeleteEntry(
   return ret;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE ItemPointer *value,
@@ -123,7 +123,7 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
  * Scan() - Scans a range inside the index using index scan optimizer
  *
  */
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 void SKIPLIST_INDEX_TYPE::Scan(
     UNUSED_ATTRIBUTE const std::vector<type::Value> &value_list,
     UNUSED_ATTRIBUTE const std::vector<oid_t> &tuple_column_id_list,
@@ -139,7 +139,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
  * ScanLimit() - Scan the index with predicate and limit/offset
  *
  */
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 void SKIPLIST_INDEX_TYPE::ScanLimit(
     UNUSED_ATTRIBUTE const std::vector<type::Value> &value_list,
     UNUSED_ATTRIBUTE const std::vector<oid_t> &tuple_column_id_list,
@@ -152,14 +152,14 @@ void SKIPLIST_INDEX_TYPE::ScanLimit(
   return;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 void SKIPLIST_INDEX_TYPE::ScanAllKeys(
     UNUSED_ATTRIBUTE std::vector<ValueType> &result) {
   // TODO: Add your implementation here
   return;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 void SKIPLIST_INDEX_TYPE::ScanKey(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE std::vector<ValueType> &result) {
@@ -177,7 +177,7 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
   return;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 std::string SKIPLIST_INDEX_TYPE::GetTypeName() const { return "SkipList"; }
 
 // IMPORTANT: Make sure you don't exceed CompactIntegerKey_MAX_SLOTS

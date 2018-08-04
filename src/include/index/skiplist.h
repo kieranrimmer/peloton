@@ -22,13 +22,18 @@
 
 #define ASSUMED_CACHE_LINE_SIZE 64
 
+#define MAX_ALLOWED_INSERT_REATTEMPTS 100
+
 #define MIN_NODE_FLAG 0x01
 #define NIL_NODE_FLAG 0x03
+
+#define MIN_SKIPLIST_LEVEL 0
 
 #include "common/macros.h"
 
 
 #include <algorithm>
+#include <limits>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -51,14 +56,62 @@ using skip_level_t = int;
 namespace peloton {
 namespace index {
 
-#define SKIPLIST_TEMPLATE_ARGUMENTS                                       \
+#define SKIPLIST_TEMPLATE_PARAMETERS                                       \
   template <typename KeyType, typename ValueType, typename KeyComparator, \
             typename KeyEqualityChecker, typename ValueEqualityChecker>
 
-#define SKIPLIST_TYPE SkipList<KeyType, ValueType, KeyComparator, \
+#define SKIPLIST_TYPE \
+  SkipList<KeyType, ValueType, KeyComparator, \
         KeyEqualityChecker, ValueEqualityChecker>
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+#define SKIPLIST_KEY_COMPARATOR_TEMPLATE_PARAMETERS                                       \
+  template <typename KeyType, typename KeyComparator>
+
+#define SKIPLIST_KEY_COMPARATOR_TEMPLATE_ARGUMENTS \
+  KeyType, KeyComparator
+
+#define SKIPLIST_KEY_EQUALITY_TEMPLATE_PARAMETERS                                       \
+  template <typename KeyType, typename KeyEqualityChecker>
+
+#define SKIPLIST_VALUE_EQUALITY_TEMPLATE_PARAMETERS                                       \
+  template <typename ValueType, typename ValueEqualityChecker>
+
+// If key1 < key2 return true
+SKIPLIST_KEY_COMPARATOR_TEMPLATE_PARAMETERS
+inline bool KeyCmpLess(const KeyType &key1, const KeyType &key2) {
+  static const KeyComparator keyComparator;
+  return keyComparator(key1, key2);
+}
+
+SKIPLIST_KEY_COMPARATOR_TEMPLATE_PARAMETERS
+inline bool KeyCmpGreaterEqual(const KeyType &key1, const KeyType &key2) {
+  return !KeyCmpLess<SKIPLIST_KEY_COMPARATOR_TEMPLATE_ARGUMENTS>(key1, key2);
+}
+
+SKIPLIST_KEY_COMPARATOR_TEMPLATE_PARAMETERS
+inline bool KeyCmpGreater(const KeyType &key1, const KeyType &key2) {
+  return KeyCmpLess<SKIPLIST_KEY_COMPARATOR_TEMPLATE_ARGUMENTS>(key2, key1);
+}
+
+SKIPLIST_KEY_COMPARATOR_TEMPLATE_PARAMETERS
+inline bool KeyCmpLessEqual(const KeyType &key1, const KeyType &key2) {
+  return !KeyCmpGreater<SKIPLIST_KEY_COMPARATOR_TEMPLATE_ARGUMENTS>(key1, key2);
+}
+
+SKIPLIST_KEY_EQUALITY_TEMPLATE_PARAMETERS
+inline bool KeyCmpEqual(const KeyType &key1, const KeyType &key2) {
+  static const KeyEqualityChecker keyEqualityChecker;
+  return keyEqualityChecker(key1, key2);
+}
+
+SKIPLIST_VALUE_EQUALITY_TEMPLATE_PARAMETERS
+inline bool ValueCmpEqual(const ValueType &v1, const ValueType &v2) {
+  static const ValueEqualityChecker valueEqualityChecker;
+  return valueEqualityChecker(v1, v2);
+}
+
+
+SKIPLIST_TEMPLATE_PARAMETERS
 class SkipList {
 
 #ifdef ALL_PUBLIC
@@ -67,17 +120,44 @@ class SkipList {
   private:
 #endif
 
+  const KeyComparator keyComparator;
+
+  const KeyEqualityChecker keyEqualityChecker;
+
   class ThreadContext;
 
   class UpperNode;
 
   class BottomNode;
 
+  class MinNode;
+
   using SkipListNodeType = BottomNode;
 
   void GetValue(const KeyType &search_key, std::vector<ValueType> &value_list);
 
-  void Search(ThreadContext &context, std::vector<ValueType> &value_list);
+  void Search(ThreadContext &context, std::vector<ValueType> &value_list) const;
+
+  UpperNode * TraverseUpperLevel(ThreadContext &context, UpperNode *searchNode) const;
+
+  void* AddEntryToUpperLevel(ThreadContext &context, void *downLink, const skip_level_t level);
+
+  void* AddEntryToUpperLevel(ThreadContext &context, const void * downLink);
+
+  UpperNode * InsertKeyIntoUpperLevel(ThreadContext &context, UpperNode *nodeSearched, void *downLink);
+
+  UpperNode * InsertKeyIntoBottomLevel(ThreadContext &context, UpperNode *nodeSearched, void *downLink);
+
+  SkipList<KeyType, ValueType, KeyComparator, KeyEqualityChecker, ValueEqualityChecker>::MinNode *
+  GoToLevel(ThreadContext &context, const skip_level_t level) const;
+
+  static inline bool isNilNode(const flags_t flags) {
+    return flags & NIL_NODE_FLAG;
+  }
+
+  static inline bool isMinNode(const flags_t flags) {
+    return flags & MIN_NODE_FLAG;
+  }
 
   // TODO: Add your declarations here
   public:
@@ -127,8 +207,6 @@ class SkipList {
 
   bool AddBottomLevel();
 
-  // static size_t ARR_SIZE = sizeof(KeyValuePair) / ASSUMED_CACHE_LINE_SIZE;
-
   static const size_t ARR_SIZE = 1;
 
   static const size_t UPPER_ARR_SIZE = 1;
@@ -156,6 +234,10 @@ class SkipList {
     explicit inline ThreadContext(const KeyType &key)
       : search_key{key} {}
 
+    KeyType getKey() {
+      return search_key;
+    }
+
   };
 
 
@@ -165,7 +247,7 @@ class SkipList {
     KeyType keyArr[UPPER_ARR_SIZE];
     void *downArr[UPPER_ARR_SIZE];
     flags_t flags = 0x00;
-    UpperNode *forward;
+    void *forward;
 
     public:
     inline UpperNode() = delete;
@@ -190,8 +272,10 @@ class SkipList {
         flags{_flags},
         forward{next} {}
 
+    inline bool containsGreaterThanEqualKey(const KeyType searchKey) const;
+
     UpperNode *getForward() {
-      return forward;
+      return (UpperNode *) forward;
     }
 
   };
@@ -216,7 +300,7 @@ class SkipList {
       level = _level;
     }
 
-    inline skip_level_t getLevel() {
+    inline skip_level_t getLevel() const {
       return level;
     }
 
@@ -292,7 +376,7 @@ class SkipList {
 
   class MaxBottomNode : public BottomNode {
     public:
-    MaxBottomNode() :
+    inline MaxBottomNode() :
         BottomNode(nullptr, NIL_NODE_FLAG) {}
   };
 

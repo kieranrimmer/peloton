@@ -38,21 +38,21 @@ bool atomicUpdateSkiplistLevelPtr(void *src_ptr, const void * curVal, const void
                                       *cast_value_ptr);
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::Delete(UNUSED_ATTRIBUTE const KeyType &key,
                            UNUSED_ATTRIBUTE const ValueType &value) {
   bool retVal = false;
   return retVal;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::AddEntry(UNUSED_ATTRIBUTE ThreadContext &context,
                              UNUSED_ATTRIBUTE const ValueType &value,
                              UNUSED_ATTRIBUTE bool unique_key) {
   return true;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::Insert(UNUSED_ATTRIBUTE const KeyType &key,
                            UNUSED_ATTRIBUTE const ValueType &value,
                            UNUSED_ATTRIBUTE bool unique_key) {
@@ -71,7 +71,7 @@ bool SKIPLIST_TYPE::Insert(UNUSED_ATTRIBUTE const KeyType &key,
   return AddEntry(context, value);
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::AddBottomLevel() {
   void *curTopPtr = topStartNodeAddr;
   BottomNode *nilEndNode = new MaxBottomNode();
@@ -79,9 +79,9 @@ bool SKIPLIST_TYPE::AddBottomLevel() {
   return __sync_bool_compare_and_swap(&topStartNodeAddr, (void*) curTopPtr, (void*) minBotNode);
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::AddLevel() {
-  auto *curTopStart = reinterpret_cast<MinNode*>(topStartNodeAddr);
+  auto *curTopStart = reinterpret_cast<MinNode *>(topStartNodeAddr);
   skip_level_t curTopLevel = curTopStart->getLevel();
   LOG_DEBUG("Adding level %d to skiplist...", curTopLevel + 1);
   UpperNode *nilEndNode = new MaxUpperNode();
@@ -94,8 +94,94 @@ bool SKIPLIST_TYPE::AddLevel() {
   return false;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
-SKIPLIST_TYPE::SkipList()  {
+SKIPLIST_TEMPLATE_PARAMETERS
+bool SKIPLIST_TYPE::UpperNode::containsGreaterThanEqualKey(const KeyType searchKey) const {
+  for (int i=0; (size_t) i < UPPER_ARR_SIZE; ++i) {
+    if (KeyCmpGreaterEqual<KeyType, KeyComparator>(searchKey, keyArr[i]))
+      return true;
+  }
+  return false;
+}
+
+SKIPLIST_TEMPLATE_PARAMETERS
+typename SKIPLIST_TYPE::UpperNode * SKIPLIST_TYPE::TraverseUpperLevel(ThreadContext &context, UpperNode *searchNode) const {
+  PELOTON_ASSERT(isMinNode(searchNode->flags));
+  UpperNode *nextNode = searchNode->getForward();
+  do {
+    searchNode = nextNode;
+    nextNode = searchNode->getForward();
+  } while (!isNilNode(searchNode->flags) && nextNode->containsGreaterThanEqualKey(context.getKey()));
+  return searchNode;
+}
+
+SKIPLIST_TEMPLATE_PARAMETERS
+typename SKIPLIST_TYPE::MinNode* SKIPLIST_TYPE::GoToLevel(UNUSED_ATTRIBUTE ThreadContext &context, const skip_level_t level) const {
+  PELOTON_ASSERT(level >= MIN_SKIPLIST_LEVEL && level <= std::numeric_limits<skip_level_t>::max());
+  auto searchNode = reinterpret_cast<MinNode*>(topStartNodeAddr);
+  PELOTON_ASSERT(searchNode->getLevel() <= level);
+  while (searchNode->getLevel() >= MIN_SKIPLIST_LEVEL) {
+    if (searchNode->getLevel() == level)
+      return searchNode;
+  }
+  PELOTON_ASSERT(false);
+  return nullptr;
+}
+
+SKIPLIST_TEMPLATE_PARAMETERS
+typename SKIPLIST_TYPE::UpperNode* SKIPLIST_TYPE::InsertKeyIntoUpperLevel(UNUSED_ATTRIBUTE ThreadContext &context, UpperNode *nodeSearched, void *downLink) {
+  auto nodeToInsert = new UpperNode{
+    (UpperNode *) nodeSearched->forward,
+    context.getKey(),
+    downLink
+  };
+  int attempts = 0;
+  while (true) {
+    if (__sync_bool_compare_and_swap(&nodeSearched->forward, (void*) nodeSearched->forward, (void*) nodeToInsert)) {
+      return nodeToInsert;
+    }
+    if (attempts++ > MAX_ALLOWED_INSERT_REATTEMPTS) {
+      delete(nodeToInsert);
+      break;
+    }
+  }
+  // PELOTON_ASSERT(false);
+  return nullptr;
+}
+
+SKIPLIST_TEMPLATE_PARAMETERS
+typename SKIPLIST_TYPE::UpperNode* SKIPLIST_TYPE::InsertKeyIntoBottomLevel(UNUSED_ATTRIBUTE ThreadContext &context, UpperNode *nodeSearched, void *downLink) {
+  auto nodeToInsert = new UpperNode{
+    (UpperNode *) nodeSearched->forward,
+    context.getKey(),
+    downLink
+  };
+  int attempts = 0;
+  while (true) {
+    if (__sync_bool_compare_and_swap(&nodeSearched->forward, (void*) nodeSearched->forward, (void*) nodeToInsert)) {
+      return nodeToInsert;
+    }
+    if (attempts++ > MAX_ALLOWED_INSERT_REATTEMPTS) {
+      delete(nodeToInsert);
+      break;
+    }
+  }
+  // PELOTON_ASSERT(false);
+  return nullptr;
+}
+
+
+SKIPLIST_TEMPLATE_PARAMETERS
+void* SKIPLIST_TYPE::AddEntryToUpperLevel(UNUSED_ATTRIBUTE ThreadContext &context, void *downLink, const skip_level_t level) {
+  PELOTON_ASSERT(level > MIN_SKIPLIST_LEVEL && level <= std::numeric_limits<skip_level_t>::max());
+  auto upperStartNode = reinterpret_cast<MinUpperNode*>(GoToLevel(context, level));
+  auto searchNode = TraverseUpperLevel(context, upperStartNode);
+  return InsertKeyIntoUpperLevel(context, searchNode, downLink);
+}
+
+SKIPLIST_TEMPLATE_PARAMETERS
+SKIPLIST_TYPE::SkipList():
+    keyComparator{KeyComparator{}},
+    keyEqualityChecker{KeyEqualityChecker{}} {
   LOG_DEBUG("SkipList container class ctor called");
   AddBottomLevel();
   for (int i=1; i < INITIAL_SKIPLIST_NODE_HEIGHT; i++) {
@@ -103,20 +189,20 @@ SKIPLIST_TYPE::SkipList()  {
   }
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 skip_level_t SKIPLIST_TYPE::getTopLevel() {
   return reinterpret_cast<MinNode*>(topStartNodeAddr)->getLevel();
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
-void SKIPLIST_TYPE::Search(UNUSED_ATTRIBUTE ThreadContext &context, UNUSED_ATTRIBUTE std::vector<ValueType> &value_list) {
+SKIPLIST_TEMPLATE_PARAMETERS
+void SKIPLIST_TYPE::Search(UNUSED_ATTRIBUTE ThreadContext &context, UNUSED_ATTRIBUTE std::vector<ValueType> &value_list) const {
   LOG_TRACE("Search()");
 //  auto topNode = reinterpret_cast<MinUpperNode*>(topStartNodeAddr);
 //  for (auto x: )
   return;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 void SKIPLIST_TYPE::GetValue(const KeyType &search_key, UNUSED_ATTRIBUTE std::vector<ValueType> &value_list) {
   LOG_TRACE("GetValue()");
 
@@ -127,7 +213,7 @@ void SKIPLIST_TYPE::GetValue(const KeyType &search_key, UNUSED_ATTRIBUTE std::ve
   return;
 }
 
-SKIPLIST_TEMPLATE_ARGUMENTS
+SKIPLIST_TEMPLATE_PARAMETERS
 SKIPLIST_TYPE::~SkipList()  {
   LOG_DEBUG("SkipList container class dtor called");
 }
