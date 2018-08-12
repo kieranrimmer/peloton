@@ -298,7 +298,7 @@ class SkipList {
 
     explicit inline MinNode(skip_level_t _level)
       : level(_level) {
-      level = _level;
+      // level = _level;
     }
 
     inline void setLevel(skip_level_t _level) {

@@ -91,7 +91,7 @@ bool SKIPLIST_TYPE::AddLevel() {
   skip_level_t curTopLevel = curTopStart->getLevel();
   LOG_DEBUG("Adding level %d to skiplist...", curTopLevel + 1);
   UpperNode *nilEndNode = new MaxUpperNode();
-  auto *startNode = new MinUpperNode(nilEndNode, curTopStart, reinterpret_cast<MinNode*>(topStartNodeAddr)->getLevel() + 1);
+  auto *startNode = new MinUpperNode(nilEndNode, curTopStart, curTopStart->getLevel() + 1);
   if (__sync_bool_compare_and_swap(&topStartNodeAddr, (void*) curTopStart, (void*) startNode)) {
     return true;
   }
