@@ -28,6 +28,7 @@
 #define NIL_NODE_FLAG 0x03
 
 #define MIN_SKIPLIST_LEVEL 0
+#define MAX_SKIPLIST_LEVEL 2000
 
 #include "common/macros.h"
 
@@ -140,9 +141,13 @@ class SkipList {
 
   UpperNode * TraverseUpperLevel(ThreadContext &context, UpperNode *searchNode) const;
 
+  BottomNode * TraverseBottomLevel(ThreadContext &context, BottomNode *searchNode) const;
+
   void* AddEntryToUpperLevel(ThreadContext &context, void *downLink, const skip_level_t level);
 
   void* AddEntryToUpperLevel(ThreadContext &context, const void * downLink);
+
+  KeyType* AddEntryToBottomLevel(ThreadContext &context, ValueType &value);
 
   UpperNode * InsertKeyIntoUpperLevel(ThreadContext &context, UpperNode *nodeSearched, void *downLink);
 
@@ -191,9 +196,7 @@ class SkipList {
   private:
 #endif
 
-  bool AddEntry(ThreadContext &context,
-              const ValueType &value,
-              bool unique_key = false);
+  bool AddEntry(ThreadContext &context, const KeyType &key, const ValueType &value, bool unique_key);
 
   void *topStartNodeAddr;
 
@@ -294,7 +297,9 @@ class SkipList {
     MinNode() = delete;
 
     explicit inline MinNode(skip_level_t _level)
-      : level(_level) {}
+      : level(_level) {
+      level = _level;
+    }
 
     inline void setLevel(skip_level_t _level) {
       level = _level;
@@ -337,7 +342,7 @@ class SkipList {
     KeyType keyArr[ARR_SIZE];
     ValueType valArr[ARR_SIZE];
     flags_t flags = 0x00;
-    BottomNode *forward;
+    void *forward;
     public:
     inline BottomNode() : forward() {}
 
@@ -358,8 +363,10 @@ class SkipList {
         forward{next} {}
 
     BottomNode *getForward() {
-      return forward;
+      return (BottomNode *) forward;
     }
+
+    inline bool containsGreaterThanEqualKey(const KeyType searchKey) const;
 
   };
 
@@ -381,6 +388,7 @@ class SkipList {
   };
 
   public:
+
   SkipList();
 
   ~SkipList();
