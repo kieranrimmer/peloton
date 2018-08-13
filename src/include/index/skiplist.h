@@ -147,7 +147,7 @@ class SkipList {
 
   void* AddEntryToUpperLevel(ThreadContext &context, const void * downLink);
 
-  KeyType* AddEntryToBottomLevel(ThreadContext &context, ValueType &value);
+  KeyType* AddEntryToBottomLevel(ThreadContext &context, ValueType &value, BottomNode *startingPoint = nullptr);
 
   UpperNode * InsertKeyIntoUpperLevel(ThreadContext &context, UpperNode *nodeSearched, void *downLink);
 
@@ -346,19 +346,19 @@ class SkipList {
     public:
     inline BottomNode() : forward() {}
 
-    explicit inline BottomNode(BottomNode *next, KeyType key, ValueType val) :
+    explicit inline BottomNode(void *next, KeyType key, ValueType val) :
         keyArr{key},
         valArr{val},
         forward{next} {}
 
-    explicit inline BottomNode(BottomNode *next, KeyType key, flags_t _flags, ValueType val) :
+    explicit inline BottomNode(void *next, KeyType key, flags_t _flags, ValueType val) :
         keyArr{key},
         valArr{val},
         flags{_flags},
         forward{next} {}
 
     // for min and max keys
-    explicit inline BottomNode(BottomNode *next, flags_t _flags) :
+    explicit inline BottomNode(void *next, flags_t _flags) :
         flags{_flags},
         forward{next} {}
 

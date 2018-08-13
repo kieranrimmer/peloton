@@ -154,14 +154,16 @@ typename SKIPLIST_TYPE::MinNode* SKIPLIST_TYPE::GoToLevel(UNUSED_ATTRIBUTE Threa
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-KeyType* SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, ValueType &value) {
+KeyType* SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, ValueType &value, BottomNode *startingPoint) {
+  if (startingPoint == nullptr)
+    startingPoint = reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0));
+  auto nodeSearched = TraverseBottomLevel(context, startingPoint);
   auto nodeToInsert = new BottomNode{
-    nullptr,
+    nodeSearched->forward,
     context.getKey(),
     value
   };
   int attempts = 0;
-  auto nodeSearched = TraverseBottomLevel(context, reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0)));
   while (true) {
     if (__sync_bool_compare_and_swap(&nodeSearched->forward, (void*) nodeSearched->forward, (void*) nodeToInsert)) {
       return &nodeToInsert->keyArr[0];
@@ -170,6 +172,8 @@ KeyType* SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, ValueType 
       delete(nodeToInsert);
       break;
     }
+    nodeSearched = TraverseBottomLevel(context, reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0)));
+    nodeToInsert->forward = nodeSearched->forward;
   }
   return nullptr;
 }
