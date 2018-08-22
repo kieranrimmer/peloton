@@ -143,11 +143,13 @@ class SkipList {
 
   BottomNode * TraverseBottomLevel(ThreadContext &context, BottomNode *searchNode) const;
 
+  bool AddEntry(ThreadContext &context, const KeyType &key, const ValueType &value, bool unique_key);
+
   void* AddEntryToUpperLevel(ThreadContext &context, void *downLink, const skip_level_t level);
 
   void* AddEntryToUpperLevel(ThreadContext &context, const void * downLink);
 
-  KeyType* AddEntryToBottomLevel(ThreadContext &context, ValueType &value, BottomNode *startingPoint = nullptr);
+  KeyType* AddEntryToBottomLevel(ThreadContext &context, const ValueType &value, BottomNode *startingPoint = nullptr);
 
   UpperNode * InsertKeyIntoUpperLevel(ThreadContext &context, UpperNode *nodeSearched, void *downLink);
 
@@ -195,8 +197,6 @@ class SkipList {
 #else
   private:
 #endif
-
-  bool AddEntry(ThreadContext &context, const KeyType &key, const ValueType &value, bool unique_key);
 
   void *topStartNodeAddr;
 

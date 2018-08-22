@@ -51,9 +51,9 @@ TEST_F(SkipListIndexTests, NoOpTest) {
 //  TestingIndexUtil::MultiMapInsertTest(IndexType::SKIPLIST);
 //}
 //
-//TEST_F(SkipListIndexTests, UniqueKeyInsertTest) {
-//  TestingIndexUtil::UniqueKeyInsertTest(IndexType::SKIPLIST);
-//}
+TEST_F(SkipListIndexTests, UniqueKeyInsertTest) {
+  TestingIndexUtil::UniqueKeyInsertTest(IndexType::SKIPLIST);
+}
 //
 //TEST_F(SkipListIndexTests, UniqueKeyDeleteTest) {
 //  TestingIndexUtil::UniqueKeyDeleteTest(IndexType::SKIPLIST);

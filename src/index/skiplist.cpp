@@ -55,7 +55,8 @@ bool SKIPLIST_TYPE::AddEntry(UNUSED_ATTRIBUTE ThreadContext &context,
   // while (curLevel < MAX_SKIPLIST_LEVEL) {
     // AddEntryToUpperLevel()
   // }
-  return true;
+  auto entry = AddEntryToBottomLevel(context, value);
+  return entry != nullptr;
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
@@ -80,8 +81,8 @@ bool SKIPLIST_TYPE::Insert(UNUSED_ATTRIBUTE const KeyType &key,
 SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::AddBottomLevel() {
   void *curTopPtr = topStartNodeAddr;
-  BottomNode *nilEndNode = new MaxBottomNode();
-  BottomNode *minBotNode = new MinBottomNode(nilEndNode);
+  auto nilEndNode = new MaxBottomNode();
+  auto minBotNode = new MinBottomNode(nilEndNode);
   return __sync_bool_compare_and_swap(&topStartNodeAddr, (void*) curTopPtr, (void*) minBotNode);
 }
 
@@ -144,17 +145,19 @@ SKIPLIST_TEMPLATE_PARAMETERS
 typename SKIPLIST_TYPE::MinNode* SKIPLIST_TYPE::GoToLevel(UNUSED_ATTRIBUTE ThreadContext &context, const skip_level_t level) const {
   PELOTON_ASSERT(level >= MIN_SKIPLIST_LEVEL && level <= std::numeric_limits<skip_level_t>::max());
   auto searchNode = reinterpret_cast<MinNode*>(topStartNodeAddr);
-  PELOTON_ASSERT(searchNode->getLevel() <= level);
+  PELOTON_ASSERT(searchNode->getLevel() >= level);
   while (searchNode->getLevel() >= MIN_SKIPLIST_LEVEL) {
     if (searchNode->getLevel() == level)
       return searchNode;
+    auto upperNode = reinterpret_cast<MinUpperNode*>(searchNode);
+    searchNode = reinterpret_cast<MinNode*>(upperNode->downArr[0]);
   }
   PELOTON_ASSERT(false);
   return nullptr;
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-KeyType* SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, ValueType &value, BottomNode *startingPoint) {
+KeyType* SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, const ValueType &value, BottomNode *startingPoint) {
   if (startingPoint == nullptr)
     startingPoint = reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0));
   auto nodeSearched = TraverseBottomLevel(context, startingPoint);
@@ -234,7 +237,7 @@ SKIPLIST_TYPE::SkipList():
     keyComparator{KeyComparator{}},
     keyEqualityChecker{KeyEqualityChecker{}} {
   LOG_DEBUG("SkipList container class ctor called");
-  AddBottomLevel();
+  PELOTON_ASSERT(AddBottomLevel());
   for (int i=1; i < INITIAL_SKIPLIST_NODE_HEIGHT; i++) {
     AddLevel();
   }
@@ -248,8 +251,16 @@ skip_level_t SKIPLIST_TYPE::getTopLevel() {
 SKIPLIST_TEMPLATE_PARAMETERS
 void SKIPLIST_TYPE::Search(UNUSED_ATTRIBUTE ThreadContext &context, UNUSED_ATTRIBUTE std::vector<ValueType> &value_list) const {
   LOG_TRACE("Search()");
-//  auto topNode = reinterpret_cast<MinUpperNode*>(topStartNodeAddr);
-//  for (auto x: )
+
+  auto topNode = reinterpret_cast<MinNode*>(topStartNodeAddr);
+  while (topNode->getLevel() > 1) {
+    LOG_DEBUG("iterating down SkipList, currently on level %d", topNode->getLevel());
+    topNode = GoToLevel(context, topNode->getLevel() - 1);
+  }
+  UNUSED_ATTRIBUTE auto bottomNode = reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0));
+  auto node = TraverseBottomLevel(context, bottomNode);
+  if (node->containsGreaterThanEqualKey(context.getKey()))
+    value_list.push_back(node->valArr[0]);
   return;
 }
 
