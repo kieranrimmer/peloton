@@ -26,6 +26,8 @@
 
 #define MIN_NODE_FLAG 0x01
 #define NIL_NODE_FLAG 0x03
+#define IS_DELETABLE_FLAG 0x05
+#define IS_DELETED_FLAG 0x07
 
 #define MIN_SKIPLIST_LEVEL 0
 #define MAX_SKIPLIST_LEVEL 2000
@@ -166,6 +168,22 @@ class SkipList {
     return flags & MIN_NODE_FLAG;
   }
 
+  static inline void makeDeletable(flags_t &flags) {
+    flags ^= IS_DELETABLE_FLAG;
+  }
+
+  static inline void makeDeleted(flags_t &flags) {
+    flags ^= IS_DELETED_FLAG;
+  }
+
+  static inline bool isDeletable(const flags_t flags) {
+    return flags & IS_DELETABLE_FLAG;
+  }
+
+  static inline bool isDeleted(const flags_t flags) {
+    return flags & IS_DELETED_FLAG;
+  }
+
   // TODO: Add your declarations here
   public:
 
@@ -263,12 +281,6 @@ class SkipList {
         downArr{down},
         forward{next} {}
 
-    explicit inline UpperNode(UpperNode *next, KeyType key, flags_t _flags, void *down) :
-        keyArr{key},
-        downArr{down},
-        flags{_flags},
-        forward{next} {}
-
     // for min and max keys
     explicit inline UpperNode(UpperNode *next, flags_t _flags, void *down) :
         downArr{down},
@@ -297,13 +309,7 @@ class SkipList {
     MinNode() = delete;
 
     explicit inline MinNode(skip_level_t _level)
-      : level(_level) {
-      // level = _level;
-    }
-
-    inline void setLevel(skip_level_t _level) {
-      level = _level;
-    }
+      : level(_level) {}
 
     inline skip_level_t getLevel() const {
       return level;

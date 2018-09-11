@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <include/index/skiplist.h>
 #include "index/skiplist.h"
 
 #include "index/index_key.h"
@@ -30,7 +31,7 @@ bool atomicUpdateSkiplistLevel(skip_level_t *src_ptr, const skip_level_t &value)
 
 bool atomicUpdateSkiplistLevelPtr(void *src_ptr, const void * curVal, const void *newAddr) {
   PELOTON_ASSERT(sizeof(void*) == sizeof(int64_t));
-  const int64_t* cast_src_ptr = reinterpret_cast<const int64_t*>(src_ptr);
+  int64_t* cast_src_ptr = reinterpret_cast<int64_t*>(src_ptr);
   const int64_t* curr_addr = reinterpret_cast<const int64_t*>(curVal);
   const int64_t* cast_value_ptr = reinterpret_cast<const int64_t*>(newAddr);
   return __sync_bool_compare_and_swap(cast_src_ptr,
@@ -56,6 +57,12 @@ bool SKIPLIST_TYPE::AddEntry(UNUSED_ATTRIBUTE ThreadContext &context,
     // AddEntryToUpperLevel()
   // }
   auto entry = AddEntryToBottomLevel(context, value);
+  int i=1;
+  auto downP = (void*) entry;
+  while (i < INITIAL_SKIPLIST_NODE_HEIGHT) {
+    downP = AddEntryToUpperLevel(context, downP, (skip_level_t) i);
+    ++i;
+  }
   return entry != nullptr;
 }
 
@@ -188,6 +195,7 @@ typename SKIPLIST_TYPE::UpperNode* SKIPLIST_TYPE::InsertKeyIntoUpperLevel(UNUSED
     context.getKey(),
     downLink
   };
+  PELOTON_ASSERT(!isDeletable(nodeToInsert->flags));
   int attempts = 0;
   while (true) {
     if (__sync_bool_compare_and_swap(&nodeSearched->forward, (void*) nodeSearched->forward, (void*) nodeToInsert)) {
