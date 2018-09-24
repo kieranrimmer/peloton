@@ -151,7 +151,8 @@ class SkipList {
 
   void* AddEntryToUpperLevel(ThreadContext &context, const void * downLink);
 
-  KeyType* AddEntryToBottomLevel(ThreadContext &context, const ValueType &value, BottomNode *startingPoint = nullptr);
+  BottomNode * AddEntryToBottomLevel(ThreadContext &context, const ValueType &value,
+                                     BottomNode *startingPoint = nullptr);
 
   UpperNode * InsertKeyIntoUpperLevel(ThreadContext &context, UpperNode *nodeSearched, void *downLink);
 

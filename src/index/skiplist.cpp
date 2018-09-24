@@ -51,18 +51,28 @@ bool SKIPLIST_TYPE::AddEntry(UNUSED_ATTRIBUTE ThreadContext &context,
                              UNUSED_ATTRIBUTE const KeyType &key,
                              UNUSED_ATTRIBUTE const ValueType &value,
                              UNUSED_ATTRIBUTE bool unique_key) {
-  // skip_level_t curLevel(0);
-  // AddEntryToUpperLevel()
-  // while (curLevel < MAX_SKIPLIST_LEVEL) {
-    // AddEntryToUpperLevel()
-  // }
   auto entry = AddEntryToBottomLevel(context, value);
+  LOG_DEBUG("Adding BottomNode which should NOT be deletable, Node details: level = %d, flags = %d, address = %p", 0, entry->flags, (void*) entry);
   int i=1;
   auto downP = (void*) entry;
   while (i < INITIAL_SKIPLIST_NODE_HEIGHT) {
     downP = AddEntryToUpperLevel(context, downP, (skip_level_t) i);
+    LOG_DEBUG("Adding UpperNode which should NOT be deletable, Node details: level = %d, flags = %d, address = %p", i, ((UpperNode*) downP)->flags, downP);
     ++i;
   }
+  auto upperNode = reinterpret_cast<UpperNode*>(downP);
+  makeDeletable(upperNode->flags);
+  PELOTON_ASSERT(isDeletable(upperNode->flags));
+  while (i > 2) {
+    upperNode = reinterpret_cast<UpperNode*>(upperNode->downArr[0]);
+    makeDeletable(upperNode->flags);
+    LOG_DEBUG("UpperNode should be deletable, Node details: level = %d, flags = %d, address = %p", i, upperNode->flags, (void*) upperNode);
+    PELOTON_ASSERT(isDeletable(upperNode->flags));
+    --i;
+  }
+  auto bottomNode = reinterpret_cast<BottomNode*>(upperNode->downArr[0]);
+  makeDeletable(bottomNode->flags);
+  PELOTON_ASSERT(isDeletable(bottomNode->flags));
   return entry != nullptr;
 }
 
@@ -70,17 +80,12 @@ SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::Insert(UNUSED_ATTRIBUTE const KeyType &key,
                            UNUSED_ATTRIBUTE const ValueType &value,
                            UNUSED_ATTRIBUTE bool unique_key) {
-  // bool retVal = true;
 
   ThreadContext context{key};
   std::vector<ValueType> value_list;
   GetValue(key, value_list);
   if (unique_key && !value_list.empty())
     return false;
-
-
-
-
   LOG_TRACE("TRACE LOGGING ENABLED");
   return AddEntry(context, key, value, false);
 }
@@ -141,10 +146,10 @@ SKIPLIST_TEMPLATE_PARAMETERS
 typename SKIPLIST_TYPE::BottomNode * SKIPLIST_TYPE::TraverseBottomLevel(ThreadContext &context, BottomNode *searchNode) const {
   PELOTON_ASSERT(isMinNode(searchNode->flags));
   auto nextNode = reinterpret_cast<BottomNode*>(searchNode->getForward());
-  do {
+  while (!isNilNode(searchNode->flags) && nextNode->containsGreaterThanEqualKey(context.getKey())) {
     searchNode = nextNode;
     nextNode = searchNode->getForward();
-  } while (!isNilNode(searchNode->flags) && nextNode->containsGreaterThanEqualKey(context.getKey()));
+  }
   return searchNode;
 }
 
@@ -164,7 +169,8 @@ typename SKIPLIST_TYPE::MinNode* SKIPLIST_TYPE::GoToLevel(UNUSED_ATTRIBUTE Threa
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-KeyType* SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, const ValueType &value, BottomNode *startingPoint) {
+typename SKIPLIST_TYPE::BottomNode * SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, const ValueType &value,
+                                                  BottomNode *startingPoint) {
   if (startingPoint == nullptr)
     startingPoint = reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0));
   auto nodeSearched = TraverseBottomLevel(context, startingPoint);
@@ -176,7 +182,7 @@ KeyType* SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, const Valu
   int attempts = 0;
   while (true) {
     if (__sync_bool_compare_and_swap(&nodeSearched->forward, (void*) nodeSearched->forward, (void*) nodeToInsert)) {
-      return &nodeToInsert->keyArr[0];
+      return nodeToInsert;
     }
     if (attempts++ > MAX_ALLOWED_INSERT_REATTEMPTS) {
       delete(nodeToInsert);
@@ -185,7 +191,7 @@ KeyType* SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, const Valu
     nodeSearched = TraverseBottomLevel(context, reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0)));
     nodeToInsert->forward = nodeSearched->forward;
   }
-  return nullptr;
+  return nodeToInsert;
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS

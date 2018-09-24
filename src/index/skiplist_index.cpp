@@ -49,22 +49,16 @@ SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_INDEX_TYPE::InsertEntry(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE ItemPointer *value) {
-  bool ret = false;
-  // TODO: Add your implementation here
   KeyType index_key;
   index_key.SetFromKey(key);
-  if(HasUniqueKeys() == true) {
-    ret = container.Insert(index_key, value, true);
-  } else {
-    ret = container.Insert(index_key, value, false);
-  }
+  bool ret = container.Insert(index_key, value, HasUniqueKeys());
 
   if (static_cast<StatsType>(settings::SettingsManager::GetInt(settings::SettingId::stats_mode)) != StatsType::INVALID) {
     stats::BackendStatsContext::GetInstance()->IncrementIndexInserts(metadata);
   }
 
   // NOTE: If I use index_key.GetInfo() here, I always get an empty key?
-  LOG_TRACE("InsertEntry(key=%s, val=%s) [%s]",
+  LOG_DEBUG("InsertEntry(key=%s, val=%s) [%s]",
             key->GetInfo().c_str(),
             IndexUtil::GetInfo(value).c_str(),
             (ret ? "SUCCESS" : "FAIL"));
