@@ -25,9 +25,10 @@
 #define MAX_ALLOWED_INSERT_REATTEMPTS 100
 
 #define MIN_NODE_FLAG 0x01
-#define NIL_NODE_FLAG 0x03
-#define IS_DELETABLE_FLAG 0x05
-#define IS_DELETED_FLAG 0x07
+#define NIL_NODE_FLAG 0x02
+#define IS_DELETABLE_FLAG 0x04
+#define IS_DELETED_FLAG 0x08
+#define IS_BOTTOM_FLAG 0x0f
 
 #define MIN_SKIPLIST_LEVEL 0
 #define MAX_SKIPLIST_LEVEL 2000
@@ -129,7 +130,7 @@ class SkipList {
 
   class ThreadContext;
 
-  class UpperNode;
+  class SkiplistNode;
 
   class BottomNode;
 
@@ -141,7 +142,7 @@ class SkipList {
 
   void Search(ThreadContext &context, std::vector<ValueType> &value_list) const;
 
-  UpperNode * TraverseUpperLevel(ThreadContext &context, UpperNode *searchNode) const;
+  SkiplistNode * TraverseUpperLevel(ThreadContext &context, SkiplistNode *searchNode) const;
 
   BottomNode * TraverseBottomLevel(ThreadContext &context, BottomNode *searchNode) const;
 
@@ -154,19 +155,19 @@ class SkipList {
   BottomNode * AddEntryToBottomLevel(ThreadContext &context, const ValueType &value,
                                      BottomNode *startingPoint = nullptr);
 
-  UpperNode * InsertKeyIntoUpperLevel(ThreadContext &context, UpperNode *nodeSearched, void *downLink);
+  SkiplistNode * InsertKeyIntoUpperLevel(ThreadContext &context, SkiplistNode *nodeSearched, void *downLink);
 
-  UpperNode * InsertKeyIntoBottomLevel(ThreadContext &context, UpperNode *nodeSearched, void *downLink);
+  SkiplistNode * InsertKeyIntoBottomLevel(ThreadContext &context, SkiplistNode *nodeSearched, void *downLink);
 
   SkipList<KeyType, ValueType, KeyComparator, KeyEqualityChecker, ValueEqualityChecker>::MinNode *
   GoToLevel(ThreadContext &context, const skip_level_t level) const;
 
   static inline bool isNilNode(const flags_t flags) {
-    return flags & NIL_NODE_FLAG;
+    return flags & (flags_t) NIL_NODE_FLAG;
   }
 
   static inline bool isMinNode(const flags_t flags) {
-    return flags & MIN_NODE_FLAG;
+    return flags & (flags_t) MIN_NODE_FLAG;
   }
 
   static inline void makeDeletable(flags_t &flags) {
@@ -178,11 +179,11 @@ class SkipList {
   }
 
   static inline bool isDeletable(const flags_t flags) {
-    return flags & IS_DELETABLE_FLAG;
+    return flags & (flags_t) IS_DELETABLE_FLAG;
   }
 
   static inline bool isDeleted(const flags_t flags) {
-    return flags & IS_DELETED_FLAG;
+    return flags & (flags_t) IS_DELETED_FLAG;
   }
 
   // TODO: Add your declarations here
@@ -263,7 +264,7 @@ class SkipList {
   };
 
 
-  class UpperNode {
+  class SkiplistNode {
     public:
 
     KeyType keyArr[UPPER_ARR_SIZE];
@@ -272,26 +273,26 @@ class SkipList {
     void *forward;
 
     public:
-    inline UpperNode() = delete;
+    inline SkiplistNode() = delete;
 
-    explicit UpperNode(flags_t _flags) :
+    explicit SkiplistNode(flags_t _flags) :
         flags{_flags} {}
 
-    explicit inline UpperNode(UpperNode *next, KeyType key, void *down) :
+    explicit inline SkiplistNode(SkiplistNode *next, KeyType key, void *down) :
         keyArr{key},
         downArr{down},
         forward{next} {}
 
     // for min and max keys
-    explicit inline UpperNode(UpperNode *next, flags_t _flags, void *down) :
+    explicit inline SkiplistNode(SkiplistNode *next, flags_t _flags, void *down) :
         downArr{down},
         flags{_flags},
         forward{next} {}
 
     inline bool containsGreaterThanEqualKey(const KeyType searchKey) const;
 
-    UpperNode *getForward() {
-      return (UpperNode *) forward;
+    SkiplistNode *getForward() {
+      return (SkiplistNode *) forward;
     }
 
   };
@@ -319,28 +320,28 @@ class SkipList {
   };
 
 
-  class MinUpperNode : public MinNode, public UpperNode {
+  class MinUpperNode : public MinNode, public SkiplistNode {
 
     public:
 
     MinUpperNode() = delete;
 
-    explicit MinUpperNode(UpperNode *next, void *down, skip_level_t _level) :
+    explicit MinUpperNode(SkiplistNode *next, void *down, skip_level_t _level) :
         MinNode(_level),
-        UpperNode(next, MIN_NODE_FLAG, down)
+        SkiplistNode(next, MIN_NODE_FLAG, down)
         {}
 
   };
 
-  class MaxUpperNode : public UpperNode {
+  class MaxUpperNode : public SkiplistNode {
 
     public:
 
     MaxUpperNode() :
-        UpperNode(NIL_NODE_FLAG) {}
+        SkiplistNode(NIL_NODE_FLAG) {}
 
     explicit MaxUpperNode(void *down) :
-        UpperNode(nullptr, NIL_NODE_FLAG, down) {}
+        SkiplistNode(nullptr, NIL_NODE_FLAG, down) {}
 
   };
 

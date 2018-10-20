@@ -57,16 +57,16 @@ bool SKIPLIST_TYPE::AddEntry(UNUSED_ATTRIBUTE ThreadContext &context,
   auto downP = (void*) entry;
   while (i < INITIAL_SKIPLIST_NODE_HEIGHT) {
     downP = AddEntryToUpperLevel(context, downP, (skip_level_t) i);
-    LOG_DEBUG("Adding UpperNode which should NOT be deletable, Node details: level = %d, flags = %d, address = %p", i, ((UpperNode*) downP)->flags, downP);
+    LOG_DEBUG("Adding SkiplistNode which should NOT be deletable, Node details: level = %d, flags = %d, address = %p", i, ((SkiplistNode*) downP)->flags, downP);
     ++i;
   }
-  auto upperNode = reinterpret_cast<UpperNode*>(downP);
+  auto upperNode = reinterpret_cast<SkiplistNode*>(downP);
   makeDeletable(upperNode->flags);
   PELOTON_ASSERT(isDeletable(upperNode->flags));
   while (i > 2) {
-    upperNode = reinterpret_cast<UpperNode*>(upperNode->downArr[0]);
+    upperNode = reinterpret_cast<SkiplistNode*>(upperNode->downArr[0]);
     makeDeletable(upperNode->flags);
-    LOG_DEBUG("UpperNode should be deletable, Node details: level = %d, flags = %d, address = %p", i, upperNode->flags, (void*) upperNode);
+    LOG_DEBUG("SkiplistNode should be deletable, Node details: level = %d, flags = %d, address = %p", i, upperNode->flags, (void*) upperNode);
     PELOTON_ASSERT(isDeletable(upperNode->flags));
     --i;
   }
@@ -103,7 +103,7 @@ bool SKIPLIST_TYPE::AddLevel() {
   auto *curTopStart = reinterpret_cast<MinNode *>(topStartNodeAddr);
   skip_level_t curTopLevel = curTopStart->getLevel();
   LOG_DEBUG("Adding level %d to skiplist...", curTopLevel + 1);
-  UpperNode *nilEndNode = new MaxUpperNode();
+  SkiplistNode *nilEndNode = new MaxUpperNode();
   auto *startNode = new MinUpperNode(nilEndNode, curTopStart, curTopStart->getLevel() + 1);
   if (__sync_bool_compare_and_swap(&topStartNodeAddr, (void*) curTopStart, (void*) startNode)) {
     return true;
@@ -114,7 +114,7 @@ bool SKIPLIST_TYPE::AddLevel() {
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-bool SKIPLIST_TYPE::UpperNode::containsGreaterThanEqualKey(const KeyType searchKey) const {
+bool SKIPLIST_TYPE::SkiplistNode::containsGreaterThanEqualKey(const KeyType searchKey) const {
   for (int i=0; (size_t) i < UPPER_ARR_SIZE; ++i) {
     if (KeyCmpGreaterEqual<KeyType, KeyComparator>(searchKey, keyArr[i]))
       return true;
@@ -132,9 +132,9 @@ bool SKIPLIST_TYPE::BottomNode::containsGreaterThanEqualKey(const KeyType search
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::UpperNode * SKIPLIST_TYPE::TraverseUpperLevel(ThreadContext &context, UpperNode *searchNode) const {
+typename SKIPLIST_TYPE::SkiplistNode * SKIPLIST_TYPE::TraverseUpperLevel(ThreadContext &context, SkiplistNode *searchNode) const {
   PELOTON_ASSERT(isMinNode(searchNode->flags));
-  UpperNode *nextNode = searchNode->getForward();
+  SkiplistNode *nextNode = searchNode->getForward();
   do {
     searchNode = nextNode;
     nextNode = searchNode->getForward();
@@ -195,9 +195,9 @@ typename SKIPLIST_TYPE::BottomNode * SKIPLIST_TYPE::AddEntryToBottomLevel(Thread
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::UpperNode* SKIPLIST_TYPE::InsertKeyIntoUpperLevel(UNUSED_ATTRIBUTE ThreadContext &context, UpperNode *nodeSearched, void *downLink) {
-  auto nodeToInsert = new UpperNode{
-    (UpperNode *) nodeSearched->forward,
+typename SKIPLIST_TYPE::SkiplistNode* SKIPLIST_TYPE::InsertKeyIntoUpperLevel(UNUSED_ATTRIBUTE ThreadContext &context, SkiplistNode *nodeSearched, void *downLink) {
+  auto nodeToInsert = new SkiplistNode{
+    (SkiplistNode *) nodeSearched->forward,
     context.getKey(),
     downLink
   };
@@ -217,9 +217,9 @@ typename SKIPLIST_TYPE::UpperNode* SKIPLIST_TYPE::InsertKeyIntoUpperLevel(UNUSED
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::UpperNode* SKIPLIST_TYPE::InsertKeyIntoBottomLevel(UNUSED_ATTRIBUTE ThreadContext &context, UpperNode *nodeSearched, void *downLink) {
-  auto nodeToInsert = new UpperNode{
-    (UpperNode *) nodeSearched->forward,
+typename SKIPLIST_TYPE::SkiplistNode* SKIPLIST_TYPE::InsertKeyIntoBottomLevel(UNUSED_ATTRIBUTE ThreadContext &context, SkiplistNode *nodeSearched, void *downLink) {
+  auto nodeToInsert = new SkiplistNode{
+    (SkiplistNode *) nodeSearched->forward,
     context.getKey(),
     downLink
   };
