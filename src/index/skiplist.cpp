@@ -52,27 +52,27 @@ bool SKIPLIST_TYPE::AddEntry(UNUSED_ATTRIBUTE ThreadContext &context,
                              UNUSED_ATTRIBUTE const ValueType &value,
                              UNUSED_ATTRIBUTE bool unique_key) {
   auto entry = AddEntryToBottomLevel(context, value);
-  LOG_DEBUG("Adding BottomNode which should NOT be deletable, Node details: level = %d, flags = %d, address = %p", 0, entry->flags, (void*) entry);
+  // LOG_DEBUG("Adding BottomNode which should NOT be deletable, Node details: level = %d, flags = %d, address = %p", 0, entry->flags, (void*) entry);
   int i=1;
-  auto downP = (void*) entry;
+  auto downP = entry;
   while (i < INITIAL_SKIPLIST_NODE_HEIGHT) {
     downP = AddEntryToUpperLevel(context, downP, (skip_level_t) i);
-    LOG_DEBUG("Adding SkiplistNode which should NOT be deletable, Node details: level = %d, flags = %d, address = %p", i, ((SkiplistNode*) downP)->flags, downP);
+    // LOG_DEBUG("Adding SkipListNode which should NOT be deletable, Node details: level = %d, flags = %d, address = %p", i, ((SkipListNode*) downP)->flags, downP);
     ++i;
   }
-  auto upperNode = reinterpret_cast<SkiplistNode*>(downP);
-  makeDeletable(upperNode->flags);
-  PELOTON_ASSERT(isDeletable(upperNode->flags));
+  auto upperNode = downP;
+  upperNode->MakeDeletable();
+  PELOTON_ASSERT(upperNode->IsDeletable());
   while (i > 2) {
-    upperNode = reinterpret_cast<SkiplistNode*>(upperNode->downArr[0]);
-    makeDeletable(upperNode->flags);
-    LOG_DEBUG("SkiplistNode should be deletable, Node details: level = %d, flags = %d, address = %p", i, upperNode->flags, (void*) upperNode);
-    PELOTON_ASSERT(isDeletable(upperNode->flags));
+    upperNode = upperNode->GetDown(key);
+    upperNode->MakeDeletable();
+    // LOG_DEBUG("SkipListNode should be deletable, Node details: level = %d, flags = %d, address = %p", i, upperNode->flags, (void*) upperNode);
+    PELOTON_ASSERT(upperNode->IsDeletable());
     --i;
   }
-  auto bottomNode = reinterpret_cast<BottomNode*>(upperNode->downArr[0]);
-  makeDeletable(bottomNode->flags);
-  PELOTON_ASSERT(isDeletable(bottomNode->flags));
+  auto bottomNode = upperNode->GetDown(key);
+  bottomNode->MakeDeletable();
+  PELOTON_ASSERT(bottomNode->IsDeletable());
   return entry != nullptr;
 }
 
@@ -92,20 +92,18 @@ bool SKIPLIST_TYPE::Insert(UNUSED_ATTRIBUTE const KeyType &key,
 
 SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::AddBottomLevel() {
-  void *curTopPtr = topStartNodeAddr;
-  auto nilEndNode = new MaxBottomNode();
-  auto minBotNode = new MinBottomNode(nilEndNode);
-  return __sync_bool_compare_and_swap(&topStartNodeAddr, (void*) curTopPtr, (void*) minBotNode);
+  auto curTopPtr = topStartNode.load();
+  auto nilEndNode = createMaxBottomNode();
+  auto minBotNode = createMinBottomNode(nilEndNode);
+  return topStartNode.compare_exchange_weak(curTopPtr, minBotNode);
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
 bool SKIPLIST_TYPE::AddLevel() {
-  auto *curTopStart = reinterpret_cast<MinNode *>(topStartNodeAddr);
-  skip_level_t curTopLevel = curTopStart->getLevel();
-  LOG_DEBUG("Adding level %d to skiplist...", curTopLevel + 1);
-  SkiplistNode *nilEndNode = new MaxUpperNode();
-  auto *startNode = new MinUpperNode(nilEndNode, curTopStart, curTopStart->getLevel() + 1);
-  if (__sync_bool_compare_and_swap(&topStartNodeAddr, (void*) curTopStart, (void*) startNode)) {
+  auto curTopStart = topStartNode.load();
+  auto nilEndNode = createMaxUpperNode();
+  auto startNode = createMinUpperNode(nilEndNode, curTopStart, curTopStart->GetLevel());
+  if (topStartNode.compare_exchange_weak(curTopStart, startNode)) {
     return true;
   }
   delete nilEndNode;
@@ -114,97 +112,76 @@ bool SKIPLIST_TYPE::AddLevel() {
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-bool SKIPLIST_TYPE::SkiplistNode::containsGreaterThanEqualKey(const KeyType searchKey) const {
-  for (int i=0; (size_t) i < UPPER_ARR_SIZE; ++i) {
-    if (KeyCmpGreaterEqual<KeyType, KeyComparator>(searchKey, keyArr[i]))
-      return true;
-  }
-  return false;
+bool SKIPLIST_TYPE::SkipListNode::ContainsGreaterThanEqualKey(const KeyType searchKey) const {
+  return ScanKey(searchKey) < (arraySize - 1);
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-bool SKIPLIST_TYPE::BottomNode::containsGreaterThanEqualKey(const KeyType searchKey) const {
-  for (int i=0; (size_t) i < UPPER_ARR_SIZE; ++i) {
-    if (KeyCmpGreaterEqual<KeyType, KeyComparator>(searchKey, keyArr[i]))
-      return true;
-  }
-  return false;
+bool SKIPLIST_TYPE::BottomSkipListNode::ContainsGreaterThanEqualKey(const KeyType searchKey) const {
+  return ScanKey(searchKey) < (arraySize - 1);
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::SkiplistNode * SKIPLIST_TYPE::TraverseUpperLevel(ThreadContext &context, SkiplistNode *searchNode) const {
-  PELOTON_ASSERT(isMinNode(searchNode->flags));
-  SkiplistNode *nextNode = searchNode->getForward();
+typename SKIPLIST_TYPE::BaseSkipListNode * SKIPLIST_TYPE::TraverseLevel(ThreadContext &context, BaseSkipListNode *searchNode) const {
+  auto nextNode = searchNode->GetNext();
   do {
     searchNode = nextNode;
-    nextNode = searchNode->getForward();
-  } while (!isNilNode(searchNode->flags) && nextNode->containsGreaterThanEqualKey(context.getKey()));
+    nextNode = searchNode->GetNext();
+  } while (!searchNode->IsNilNode() && nextNode->ContainsGreaterThanEqualKey(context.getKey()));
   return searchNode;
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::BottomNode * SKIPLIST_TYPE::TraverseBottomLevel(ThreadContext &context, BottomNode *searchNode) const {
-  PELOTON_ASSERT(isMinNode(searchNode->flags));
-  auto nextNode = reinterpret_cast<BottomNode*>(searchNode->getForward());
-  while (!isNilNode(searchNode->flags) && nextNode->containsGreaterThanEqualKey(context.getKey())) {
-    searchNode = nextNode;
-    nextNode = searchNode->getForward();
-  }
-  return searchNode;
-}
-
-SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::MinNode* SKIPLIST_TYPE::GoToLevel(UNUSED_ATTRIBUTE ThreadContext &context, const skip_level_t level) const {
+typename SKIPLIST_TYPE::MinSkipListNode* SKIPLIST_TYPE::GoToLevel(UNUSED_ATTRIBUTE ThreadContext &context, const skip_level_t level) const {
   PELOTON_ASSERT(level >= MIN_SKIPLIST_LEVEL && level <= std::numeric_limits<skip_level_t>::max());
-  auto searchNode = reinterpret_cast<MinNode*>(topStartNodeAddr);
-  PELOTON_ASSERT(searchNode->getLevel() >= level);
-  while (searchNode->getLevel() >= MIN_SKIPLIST_LEVEL) {
-    if (searchNode->getLevel() == level)
+  auto searchNode = topStartNode.load();
+  PELOTON_ASSERT(searchNode->GetLevel() >= level);
+  while (searchNode->GetLevel() >= MIN_SKIPLIST_LEVEL) {
+    if (searchNode->GetLevel() == level)
       return searchNode;
-    auto upperNode = reinterpret_cast<MinUpperNode*>(searchNode);
-    searchNode = reinterpret_cast<MinNode*>(upperNode->downArr[0]);
+    auto upperNode = searchNode;
+    searchNode = upperNode->GoToLevelBelow();
   }
   PELOTON_ASSERT(false);
   return nullptr;
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::BottomNode * SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, const ValueType &value,
-                                                  BottomNode *startingPoint) {
+typename SKIPLIST_TYPE::BaseSkipListNode * SKIPLIST_TYPE::AddEntryToBottomLevel(ThreadContext &context, UNUSED_ATTRIBUTE const ValueType &value,
+                                                                            BaseSkipListNode *startingPoint) {
   if (startingPoint == nullptr)
-    startingPoint = reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0));
-  auto nodeSearched = TraverseBottomLevel(context, startingPoint);
-  auto nodeToInsert = new BottomNode{
-    nodeSearched->forward,
-    context.getKey(),
-    value
+    startingPoint = static_cast<MinSkipListNode*>(GoToLevel(context, 0));
+  auto nodeSearched = TraverseLevel(context, startingPoint);
+  auto nodeToInsert = new BottomSkipListNode{
+    nodeSearched->GetNext()
   };
   int attempts = 0;
   while (true) {
-    if (__sync_bool_compare_and_swap(&nodeSearched->forward, (void*) nodeSearched->forward, (void*) nodeToInsert)) {
+    if (__sync_bool_compare_and_swap(&nodeSearched->forward, nodeSearched->forward, nodeToInsert)) {
       return nodeToInsert;
     }
     if (attempts++ > MAX_ALLOWED_INSERT_REATTEMPTS) {
       delete(nodeToInsert);
       break;
     }
-    nodeSearched = TraverseBottomLevel(context, reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0)));
+    nodeSearched = TraverseLevel(context, static_cast<MinSkipListNode*>(GoToLevel(context, 0)));
     nodeToInsert->forward = nodeSearched->forward;
   }
   return nodeToInsert;
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::SkiplistNode* SKIPLIST_TYPE::InsertKeyIntoUpperLevel(UNUSED_ATTRIBUTE ThreadContext &context, SkiplistNode *nodeSearched, void *downLink) {
-  auto nodeToInsert = new SkiplistNode{
-    (SkiplistNode *) nodeSearched->forward,
-    context.getKey(),
-    downLink
+typename SKIPLIST_TYPE::BaseSkipListNode* SKIPLIST_TYPE::InsertKeyIntoUpperLevel(UNUSED_ATTRIBUTE ThreadContext &context, BaseSkipListNode *nodeSearched, BaseSkipListNode *downLink) {
+  auto nodeToInsert = new SkipListNode{
+    nodeSearched->GetNext(),
+    downLink,
+    context.getKey()
+
   };
   PELOTON_ASSERT(!isDeletable(nodeToInsert->flags));
   int attempts = 0;
   while (true) {
-    if (__sync_bool_compare_and_swap(&nodeSearched->forward, (void*) nodeSearched->forward, (void*) nodeToInsert)) {
+    if (__sync_bool_compare_and_swap(&nodeSearched->forward, nodeSearched->forward, nodeToInsert)) {
       return nodeToInsert;
     }
     if (attempts++ > MAX_ALLOWED_INSERT_REATTEMPTS) {
@@ -212,20 +189,17 @@ typename SKIPLIST_TYPE::SkiplistNode* SKIPLIST_TYPE::InsertKeyIntoUpperLevel(UNU
       break;
     }
   }
-  // PELOTON_ASSERT(false);
   return nullptr;
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
-typename SKIPLIST_TYPE::SkiplistNode* SKIPLIST_TYPE::InsertKeyIntoBottomLevel(UNUSED_ATTRIBUTE ThreadContext &context, SkiplistNode *nodeSearched, void *downLink) {
-  auto nodeToInsert = new SkiplistNode{
-    (SkiplistNode *) nodeSearched->forward,
-    context.getKey(),
-    downLink
+typename SKIPLIST_TYPE::BaseSkipListNode* SKIPLIST_TYPE::InsertKeyIntoBottomLevel(UNUSED_ATTRIBUTE ThreadContext &context, BaseSkipListNode *nodeSearched) {
+  auto nodeToInsert = new BottomSkipListNode{
+    nodeSearched->GetNext()
   };
   int attempts = 0;
   while (true) {
-    if (__sync_bool_compare_and_swap(&nodeSearched->forward, (void*) nodeSearched->forward, (void*) nodeToInsert)) {
+    if (__sync_bool_compare_and_swap(&nodeSearched->forward, nodeSearched->forward, nodeToInsert)) {
       return nodeToInsert;
     }
     if (attempts++ > MAX_ALLOWED_INSERT_REATTEMPTS) {
@@ -239,10 +213,10 @@ typename SKIPLIST_TYPE::SkiplistNode* SKIPLIST_TYPE::InsertKeyIntoBottomLevel(UN
 
 
 SKIPLIST_TEMPLATE_PARAMETERS
-void* SKIPLIST_TYPE::AddEntryToUpperLevel(UNUSED_ATTRIBUTE ThreadContext &context, void *downLink, const skip_level_t level) {
+typename SKIPLIST_TYPE::BaseSkipListNode *SKIPLIST_TYPE::AddEntryToUpperLevel(UNUSED_ATTRIBUTE ThreadContext &context, BaseSkipListNode *downLink, const skip_level_t level) {
   PELOTON_ASSERT(level > MIN_SKIPLIST_LEVEL && level <= std::numeric_limits<skip_level_t>::max());
-  auto upperStartNode = reinterpret_cast<MinUpperNode*>(GoToLevel(context, level));
-  auto searchNode = TraverseUpperLevel(context, upperStartNode);
+  auto upperStartNode = reinterpret_cast<MinSkipListNode*>(GoToLevel(context, level));
+  auto searchNode = TraverseLevel(context, upperStartNode);
   return InsertKeyIntoUpperLevel(context, searchNode, downLink);
 }
 
@@ -259,22 +233,22 @@ SKIPLIST_TYPE::SkipList():
 
 SKIPLIST_TEMPLATE_PARAMETERS
 skip_level_t SKIPLIST_TYPE::getTopLevel() {
-  return reinterpret_cast<MinNode*>(topStartNodeAddr)->getLevel();
+  return topStartNode.load()->GetLevel();
 }
 
 SKIPLIST_TEMPLATE_PARAMETERS
 void SKIPLIST_TYPE::Search(UNUSED_ATTRIBUTE ThreadContext &context, UNUSED_ATTRIBUTE std::vector<ValueType> &value_list) const {
   LOG_TRACE("Search()");
 
-  auto topNode = reinterpret_cast<MinNode*>(topStartNodeAddr);
-  while (topNode->getLevel() > 1) {
-    LOG_DEBUG("iterating down SkipList, currently on level %d", topNode->getLevel());
-    topNode = GoToLevel(context, topNode->getLevel() - 1);
+  auto topNode = topStartNode.load();
+  while (topNode->GetLevel() > 1) {
+    LOG_DEBUG("iterating down SkipList, currently on level %d", topNode->GetLevel());
+    topNode = GoToLevel(context, topNode->GetLevel() - 1);
   }
-  UNUSED_ATTRIBUTE auto bottomNode = reinterpret_cast<MinBottomNode*>(GoToLevel(context, 0));
-  auto node = TraverseBottomLevel(context, bottomNode);
-  if (node->containsGreaterThanEqualKey(context.getKey()))
-    value_list.push_back(node->valArr[0]);
+  UNUSED_ATTRIBUTE auto bottomNode = reinterpret_cast<MinSkipListNode*>(GoToLevel(context, 0));
+  auto node = TraverseLevel(context, bottomNode);
+  if (auto datum = node->GetData(context.getKey()))
+    value_list.push_back(datum);
   return;
 }
 

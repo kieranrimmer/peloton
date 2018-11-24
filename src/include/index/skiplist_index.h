@@ -47,22 +47,22 @@ class SkipListIndex : public Index {
                            KeyEqualityChecker, ValueEqualityChecker>;
 
  public:
-  SkipListIndex(IndexMetadata *metadata);
+  explicit SkipListIndex(IndexMetadata *metadata);
 
-  ~SkipListIndex();
+  ~SkipListIndex() override;
 
-  bool InsertEntry(const storage::Tuple *key, ItemPointer *value);
+  bool InsertEntry(const storage::Tuple *key, ItemPointer *value) override;
 
-  bool DeleteEntry(const storage::Tuple *key, ItemPointer *value);
+  bool DeleteEntry(const storage::Tuple *key, ItemPointer *value) override;
 
   bool CondInsertEntry(const storage::Tuple *key, ItemPointer *value,
-                       std::function<bool(const void *)> predicate);
+                       std::function<bool(const void *)> predicate) override;
 
   void Scan(const std::vector<type::Value> &values,
             const std::vector<oid_t> &key_column_ids,
             const std::vector<ExpressionType> &expr_types,
             ScanDirectionType scan_direction, std::vector<ValueType> &result,
-            const ConjunctionScanPredicate *csp_p);
+            const ConjunctionScanPredicate *csp_p) override;
 
   void ScanLimit(const std::vector<type::Value> &values,
                  const std::vector<oid_t> &key_column_ids,
@@ -70,22 +70,22 @@ class SkipListIndex : public Index {
                  ScanDirectionType scan_direction,
                  std::vector<ValueType> &result,
                  const ConjunctionScanPredicate *csp_p, uint64_t limit,
-                 uint64_t offset);
+                 uint64_t offset) override;
 
-  void ScanAllKeys(std::vector<ValueType> &result);
+  void ScanAllKeys(std::vector<ValueType> &result) override;
 
-  void ScanKey(const storage::Tuple *key, std::vector<ValueType> &result);
+  void ScanKey(const storage::Tuple *key, std::vector<ValueType> &result) override;
 
-  std::string GetTypeName() const;
-
-  // TODO: Implement this
-  size_t GetMemoryFootprint() { return 0; }
+  std::string GetTypeName() const override;
 
   // TODO: Implement this
-  bool NeedGC() { return false; }
+  size_t GetMemoryFootprint() override { return 0; }
 
   // TODO: Implement this
-  void PerformGC() { return; }
+  bool NeedGC() override { return false; }
+
+  // TODO: Implement this
+  void PerformGC() override { return; }
 
  protected:
   // equality checker and comparator

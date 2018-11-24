@@ -15,8 +15,9 @@
 #ifndef _SKIPLIST_H
 #define _SKIPLIST_H
 
-
+#ifndef ALL_PUBLIC
 #define ALL_PUBLIC
+#endif
 
 #define INITIAL_SKIPLIST_NODE_HEIGHT 10
 
@@ -48,7 +49,7 @@
 #include <vector>
 #include <map>
 
-
+#include "common/synchronization/readwrite_latch.h"
 #include "index/index.h"
 
 #include <inttypes.h>
@@ -59,6 +60,50 @@ using skip_level_t = int;
 
 namespace peloton {
 namespace index {
+
+using ::peloton::common::synchronization::ReadWriteLatch;
+
+class ReadLatchRAII {
+#ifdef ALL_PUBLIC
+  public:
+#else
+  private:
+#endif
+  ReadWriteLatch &_ReadWriteLatch;
+  public:
+  explicit ReadLatchRAII(ReadWriteLatch &_RWLatch): _ReadWriteLatch(_RWLatch) {
+    _ReadWriteLatch.ReadLock();
+  }
+
+//  explicit ReadLatchRAII(const ReadLatchRAII&) = delete;
+  ReadLatchRAII &operator=(const ReadLatchRAII&) = delete;
+
+  ~ReadLatchRAII() {
+    _ReadWriteLatch.Unlock();
+  }
+
+};
+
+class WriteLatchRAII {
+#ifdef ALL_PUBLIC
+  public:
+#else
+  private:
+#endif
+  ReadWriteLatch &_ReadWriteLatch;
+  public:
+  WriteLatchRAII(ReadWriteLatch &_RWLatch): _ReadWriteLatch(_RWLatch) {
+    _ReadWriteLatch.WriteLock();
+  }
+
+  WriteLatchRAII(const WriteLatchRAII&) = delete;
+  WriteLatchRAII &operator=(const WriteLatchRAII&) = delete;
+
+  ~WriteLatchRAII() {
+    _ReadWriteLatch.Unlock();
+  }
+
+};
 
 #define SKIPLIST_TEMPLATE_PARAMETERS                                       \
   template <typename KeyType, typename ValueType, typename KeyComparator, \
@@ -118,6 +163,9 @@ inline bool ValueCmpEqual(const ValueType &v1, const ValueType &v2) {
 SKIPLIST_TEMPLATE_PARAMETERS
 class SkipList {
 
+  static_assert(sizeof(ValueType) == sizeof(void*),
+    "SkipList depends upon native pointer type as ValueType");
+
 #ifdef ALL_PUBLIC
   public:
 #else
@@ -130,36 +178,30 @@ class SkipList {
 
   class ThreadContext;
 
-  class SkiplistNode;
+  class BaseSkipListNode;
 
-  class BottomNode;
+  class SkipListNode;
 
-  class MinNode;
-
-  using SkipListNodeType = BottomNode;
+  class MinSkipListNode;
 
   void GetValue(const KeyType &search_key, std::vector<ValueType> &value_list);
 
   void Search(ThreadContext &context, std::vector<ValueType> &value_list) const;
 
-  SkiplistNode * TraverseUpperLevel(ThreadContext &context, SkiplistNode *searchNode) const;
-
-  BottomNode * TraverseBottomLevel(ThreadContext &context, BottomNode *searchNode) const;
+  BaseSkipListNode * TraverseLevel(ThreadContext &context, BaseSkipListNode *searchNode) const;
 
   bool AddEntry(ThreadContext &context, const KeyType &key, const ValueType &value, bool unique_key);
 
-  void* AddEntryToUpperLevel(ThreadContext &context, void *downLink, const skip_level_t level);
+  BaseSkipListNode *AddEntryToUpperLevel(ThreadContext &context, BaseSkipListNode *downLink, const skip_level_t level);
 
-  void* AddEntryToUpperLevel(ThreadContext &context, const void * downLink);
+  BaseSkipListNode * AddEntryToBottomLevel(ThreadContext &context, const ValueType &value,
+                                       BaseSkipListNode *startingPoint = nullptr);
 
-  BottomNode * AddEntryToBottomLevel(ThreadContext &context, const ValueType &value,
-                                     BottomNode *startingPoint = nullptr);
+  BaseSkipListNode * InsertKeyIntoUpperLevel(ThreadContext &context, BaseSkipListNode *nodeSearched, BaseSkipListNode *downLink);
 
-  SkiplistNode * InsertKeyIntoUpperLevel(ThreadContext &context, SkiplistNode *nodeSearched, void *downLink);
+  BaseSkipListNode * InsertKeyIntoBottomLevel(ThreadContext &context, BaseSkipListNode *nodeSearched);
 
-  SkiplistNode * InsertKeyIntoBottomLevel(ThreadContext &context, SkiplistNode *nodeSearched, void *downLink);
-
-  SkipList<KeyType, ValueType, KeyComparator, KeyEqualityChecker, ValueEqualityChecker>::MinNode *
+  SkipList<KeyType, ValueType, KeyComparator, KeyEqualityChecker, ValueEqualityChecker>::MinSkipListNode *
   GoToLevel(ThreadContext &context, const skip_level_t level) const;
 
   static inline bool isNilNode(const flags_t flags) {
@@ -186,24 +228,13 @@ class SkipList {
     return flags & (flags_t) IS_DELETED_FLAG;
   }
 
+  static inline bool isBottomNode(const flags_t flags) {
+    return flags & (flags_t) IS_BOTTOM_FLAG;
+  }
+
   // TODO: Add your declarations here
   public:
 
-
-  /*
-  bool Delete(UNUSED_ATTRIBUTE const KeyType &key,
-              UNUSED_ATTRIBUTE const ValueType &value) {
-    bool retVal = false;
-    return retVal;
-  }
-
-  bool Insert(UNUSED_ATTRIBUTE const KeyType &key,
-              UNUSED_ATTRIBUTE const ValueType &value,
-              UNUSED_ATTRIBUTE bool unique_key=false) {
-    bool retVal = false;
-    return retVal;
-  }
-   */
 
   bool Delete(const KeyType &key,
               const ValueType &value);
@@ -218,7 +249,9 @@ class SkipList {
   private:
 #endif
 
-  void *topStartNodeAddr;
+
+
+  std::atomic<MinSkipListNode*> topStartNode;
 
   using KeyNodeIDPair = std::pair<KeyType, SkiplistNodeID>;
 
@@ -230,9 +263,9 @@ class SkipList {
 
   bool AddBottomLevel();
 
-  static const size_t ARR_SIZE = 1;
+  static const int ARR_SIZE = 1;
 
-  static const size_t UPPER_ARR_SIZE = 1;
+  static const int UPPER_ARR_SIZE = 1;
 
   public:
 
@@ -263,137 +296,328 @@ class SkipList {
 
   };
 
-
-  class SkiplistNode {
-    public:
-
-    KeyType keyArr[UPPER_ARR_SIZE];
-    void *downArr[UPPER_ARR_SIZE];
-    flags_t flags = 0x00;
-    void *forward;
-
-    public:
-    inline SkiplistNode() = delete;
-
-    explicit SkiplistNode(flags_t _flags) :
-        flags{_flags} {}
-
-    explicit inline SkiplistNode(SkiplistNode *next, KeyType key, void *down) :
-        keyArr{key},
-        downArr{down},
-        forward{next} {}
-
-    // for min and max keys
-    explicit inline SkiplistNode(SkiplistNode *next, flags_t _flags, void *down) :
-        downArr{down},
-        flags{_flags},
-        forward{next} {}
-
-    inline bool containsGreaterThanEqualKey(const KeyType searchKey) const;
-
-    SkiplistNode *getForward() {
-      return (SkiplistNode *) forward;
-    }
-
-  };
-
-  class MinNode {
+  class BaseSkipListNode {
 
 #ifdef ALL_PUBLIC
     public:
 #else
     private:
 #endif
-    skip_level_t level = -1;
+    BaseSkipListNode *forward;
+
+    public:
+    explicit BaseSkipListNode(BaseSkipListNode *_forward): forward{_forward} {}
+
+    BaseSkipListNode *GetNext() const {
+      return forward;
+    }
+
+    virtual bool IsFull() const {
+      return false;
+    }
+
+    virtual bool IsBottomNode() const {
+      return false;
+    }
+
+    virtual bool IsNilNode() const {
+      return false;
+    }
+
+    virtual bool ContainsGreaterThanEqualKey(const UNUSED_ATTRIBUTE KeyType searchKey) const = 0;
+
+    virtual int ScanKey(const KeyType key, bool hasWriteLock = false) const = 0;
+    virtual ValueType GetData(const KeyType key) const = 0;
+    virtual BaseSkipListNode *GetDown(const KeyType key) const = 0;
+    virtual bool MakeUndeletable() = 0;
+    virtual bool MakeDeletable() = 0;
+    virtual bool IsDeletable() const = 0;
+
+
+    bool SetForward(BaseSkipListNode *_forward);
+
+    virtual bool AddEntry(const UNUSED_ATTRIBUTE KeyValuePair keyVal) {
+      return false;
+    }
+
+    virtual ReadWriteLatch *GetLatch() {
+      return nullptr;
+    }
+
+
+
+  };
+
+  class NilSkipListNode: public BaseSkipListNode {
+
+    public:
+    bool IsNilNode() const override {
+      return true;
+    }
+
+    bool ContainsGreaterThanEqualKey(const UNUSED_ATTRIBUTE KeyType searchKey) const override {
+      return true;
+    }
+
+    ValueType GetData(UNUSED_ATTRIBUTE const KeyType key) const override {
+      return nullptr;
+    }
+
+    BaseSkipListNode *GetDown(UNUSED_ATTRIBUTE const KeyType key) const override {
+      return nullptr;
+    }
+
+    bool MakeUndeletable() override {
+      return true;
+    }
+
+    bool MakeDeletable() override {
+      return true;
+    }
+
+    bool IsDeletable() const override {
+      return true;
+    }
+
+  };
+
+  class MinSkipListNode: public BaseSkipListNode {
+#ifdef ALL_PUBLIC
+    public:
+#else
+    private:
+#endif
+    MinSkipListNode *down;
+    skip_level_t level;
+    flags_t flags;
 
     public:
 
-    MinNode() = delete;
+    MinSkipListNode() = delete;
 
-    explicit inline MinNode(skip_level_t _level)
-      : level(_level) {}
+    explicit MinSkipListNode(BaseSkipListNode *forward, MinSkipListNode *_down, skip_level_t _level, flags_t _flags)
+      : BaseSkipListNode{forward}, down{_down}, level{_level}, flags{_flags} {}
 
-    inline skip_level_t getLevel() const {
+    skip_level_t GetLevel() const {
       return level;
     }
 
+    bool IsBottomNode() const override {
+      return level == 0;
+    }
+
+    BaseSkipListNode *GetDown(UNUSED_ATTRIBUTE const KeyType key) const override {
+      return down;
+    }
+
+    MinSkipListNode *GoToLevelBelow() const {
+      return down;
+    }
+
+    int ScanKey(const UNUSED_ATTRIBUTE KeyType key, UNUSED_ATTRIBUTE bool hasWriteLock = false) const override {
+      return -1;
+    }
+
+    ValueType GetData(UNUSED_ATTRIBUTE const KeyType key) const override {
+      return nullptr;
+    }
+
+    bool ContainsGreaterThanEqualKey(const UNUSED_ATTRIBUTE KeyType searchKey) const override {
+      return false;
+    }
+
+    bool MakeUndeletable() override {
+      return true;
+    }
+
+    bool MakeDeletable() override {
+      return true;
+    }
+
+    bool IsDeletable() const override {
+      return true;
+    }
+
   };
 
 
-  class MinUpperNode : public MinNode, public SkiplistNode {
 
+  class SkipListNode: public BaseSkipListNode {
+
+#ifdef ALL_PUBLIC
     public:
+#else
+    private:
+#endif
+    struct internal_node_payload  {
+      KeyType keyArr[ARR_SIZE];
+      BaseSkipListNode *downArr[ARR_SIZE];
+    } payload;
 
-    MinUpperNode() = delete;
+    int arraySize;
 
-    explicit MinUpperNode(SkiplistNode *next, void *down, skip_level_t _level) :
-        MinNode(_level),
-        SkiplistNode(next, MIN_NODE_FLAG, down)
-        {}
+    mutable ReadWriteLatch _ReadWriteLatch;
 
-  };
-
-  class MaxUpperNode : public SkiplistNode {
-
-    public:
-
-    MaxUpperNode() :
-        SkiplistNode(NIL_NODE_FLAG) {}
-
-    explicit MaxUpperNode(void *down) :
-        SkiplistNode(nullptr, NIL_NODE_FLAG, down) {}
-
-  };
-
-  class BottomNode {
-    public:
-    KeyType keyArr[ARR_SIZE];
-    ValueType valArr[ARR_SIZE];
     flags_t flags = 0x00;
-    void *forward;
+
+
     public:
-    inline BottomNode() : forward() {}
+    inline SkipListNode() = delete;
 
-    explicit inline BottomNode(void *next, KeyType key, ValueType val) :
-        keyArr{key},
-        valArr{val},
-        forward{next} {}
+    explicit SkipListNode(flags_t _flags) :
+        BaseSkipListNode{nullptr},
+        arraySize{0},
+        _ReadWriteLatch{},
+        flags{_flags} {}
 
-    explicit inline BottomNode(void *next, KeyType key, flags_t _flags, ValueType val) :
-        keyArr{key},
-        valArr{val},
-        flags{_flags},
-        forward{next} {}
+    inline SkipListNode(BaseSkipListNode *next, BaseSkipListNode *down, KeyType key) :
+        BaseSkipListNode{next},
+        _ReadWriteLatch{}
+         {
+           payload.keyArr[0] = key;
+           payload.downArr[0] = down;
+         }
 
     // for min and max keys
-    explicit inline BottomNode(void *next, flags_t _flags) :
-        flags{_flags},
-        forward{next} {}
+    inline SkipListNode(SkipListNode *next, flags_t _flags) :
+      BaseSkipListNode{next},
+      _ReadWriteLatch{},
+        flags{_flags}
+         {}
 
-    BottomNode *getForward() {
-      return (BottomNode *) forward;
+
+    int ScanKey(const KeyType key, bool hasWriteLock = false) const override {
+      if (!hasWriteLock)
+        auto readLatch = ReadLatchRAII{_ReadWriteLatch};
+      int i = -1;
+      while (i < ARR_SIZE - 1) {
+        if(KeyCmpGreater<KeyType, KeyComparator>(payload.keyArr[i + 1], key))
+          break;
+        ++i;
+      }
+      return i;
     }
 
-    inline bool containsGreaterThanEqualKey(const KeyType searchKey) const;
+    bool ContainsGreaterThanEqualKey(const KeyType searchKey) const override;
 
-  };
 
-  class MinBottomNode : public MinNode,  public BottomNode {
-    public:
-    MinBottomNode() = delete;
+    void InsertKey(KeyValuePair );
 
-    explicit inline MinBottomNode(BottomNode *next)
-      : MinNode(0),
-        BottomNode(next, MIN_NODE_FLAG) {
 
+
+    BaseSkipListNode *GetDown(const KeyType key) const override {
+      if (auto i = ScanKey(key) > -1)
+        return payload.downArr[i];
+      return nullptr;
     }
+
+    ValueType GetData(UNUSED_ATTRIBUTE const KeyType key) const override {
+      return nullptr;
+    }
+
+    ReadWriteLatch *GetLatch() override {
+      return &_ReadWriteLatch;
+    }
+
+    bool MakeUndeletable() override {
+      return true;
+    }
+
+    bool MakeDeletable() override {
+      return true;
+    }
+
+    bool IsDeletable() const override {
+      return true;
+    }
+
   };
 
-  class MaxBottomNode : public BottomNode {
+  class BottomSkipListNode: public BaseSkipListNode {
+
+    struct bottom_node_payload {
+      KeyType keyArr[ARR_SIZE];
+      ValueType downArr[ARR_SIZE];
+    } payload;
+
+    int arraySize;
+
+    ReadWriteLatch _ReadWriteLatch;
+
     public:
-    inline MaxBottomNode() :
-        BottomNode(nullptr, NIL_NODE_FLAG) {}
+
+
+    flags_t flags = 0x00;
+
+    public:
+    inline BottomSkipListNode() = delete;
+
+    explicit BottomSkipListNode(flags_t _flags) :
+      BaseSkipListNode{nullptr},
+      flags{_flags} {}
+
+    explicit inline BottomSkipListNode(BaseSkipListNode *next) :
+      BaseSkipListNode{next}
+    {}
+
+    // for min and max keys
+    inline BottomSkipListNode(BaseSkipListNode *next, flags_t _flags) :
+      BaseSkipListNode{next},
+      flags{_flags}
+    {}
+
+    bool ContainsGreaterThanEqualKey(const KeyType searchKey) const override;
+
+    BaseSkipListNode *GetDown(UNUSED_ATTRIBUTE const KeyType key) const override {
+      return nullptr;
+    }
+
+    int ScanKey(const KeyType key, UNUSED_ATTRIBUTE bool hasWriteLock = false) const override {
+      int i = -1;
+      while ((i < ARR_SIZE - 1) && KeyCmpLess<KeyType, KeyComparator>(payload.keyArr[i + 1], key)) {
+        ++i;
+      }
+      return i;
+    }
+
+    ValueType GetData(const KeyType key) const override {
+      int i = ScanKey(key);
+      return i > -1 && KeyCmpEqual<KeyType, KeyComparator>(payload.keyArr[i], key) ? payload.downArr[i] : nullptr;
+    }
+
+    ReadWriteLatch *GetLatch() override {
+      return &_ReadWriteLatch;
+    }
+
+    bool MakeUndeletable() override {
+      return true;
+    }
+
+    bool MakeDeletable() override {
+      return true;
+    }
+
+    bool IsDeletable() const override {
+      return true;
+    }
+
   };
+
+  BaseSkipListNode *createMaxUpperNode() {
+    return new SkipListNode((flags_t) NIL_NODE_FLAG);
+  }
+
+  BaseSkipListNode *createMaxBottomNode() {
+    return new SkipListNode((flags_t) NIL_NODE_FLAG & (flags_t) IS_BOTTOM_FLAG);
+  }
+
+  MinSkipListNode *createMinUpperNode(BaseSkipListNode *next, MinSkipListNode *down, skip_level_t level) {
+    return new MinSkipListNode(next, down, level, MIN_NODE_FLAG);
+  }
+
+  MinSkipListNode *createMinBottomNode(BaseSkipListNode *next) {
+    return new MinSkipListNode(next, nullptr, 0, (flags_t) MIN_NODE_FLAG & (flags_t) IS_BOTTOM_FLAG);
+  }
 
   public:
 
