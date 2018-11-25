@@ -351,6 +351,9 @@ class SkipList {
   class NilSkipListNode: public BaseSkipListNode {
 
     public:
+    NilSkipListNode():
+      BaseSkipListNode{nullptr} {}
+
     bool IsNilNode() const override {
       return true;
     }
@@ -377,6 +380,10 @@ class SkipList {
 
     bool IsDeletable() const override {
       return true;
+    }
+
+    int ScanKey(const UNUSED_ATTRIBUTE KeyType key, UNUSED_ATTRIBUTE bool hasWriteLock = false) const override {
+      return -1;
     }
 
   };
@@ -506,7 +513,8 @@ class SkipList {
 
 
     BaseSkipListNode *GetDown(const KeyType key) const override {
-      if (auto i = ScanKey(key) > -1)
+      auto i = ScanKey(key);
+      if (i > -1)
         return payload.downArr[i];
       return nullptr;
     }
@@ -552,6 +560,10 @@ class SkipList {
     public:
     inline BottomSkipListNode() = delete;
 
+    bool IsBottomNode() const override {
+      return true;
+    }
+
     explicit BottomSkipListNode(flags_t _flags) :
       BaseSkipListNode{nullptr},
       flags{_flags} {}
@@ -574,7 +586,9 @@ class SkipList {
 
     int ScanKey(const KeyType key, UNUSED_ATTRIBUTE bool hasWriteLock = false) const override {
       int i = -1;
-      while ((i < ARR_SIZE - 1) && KeyCmpLess<KeyType, KeyComparator>(payload.keyArr[i + 1], key)) {
+      while ((i < ARR_SIZE - 1) &&
+        (!KeyCmpLess<KeyType, KeyComparator>(key, payload.keyArr[i + 1]) || KeyCmpEqual<KeyType, KeyComparator>(key, payload.keyArr[i + 1]))
+      ) {
         ++i;
       }
       return i;
@@ -582,7 +596,7 @@ class SkipList {
 
     ValueType GetData(const KeyType key) const override {
       int i = ScanKey(key);
-      return i > -1 && KeyCmpEqual<KeyType, KeyComparator>(payload.keyArr[i], key) ? payload.downArr[i] : nullptr;
+      return i > -1 && KeyCmpEqual<KeyType, KeyComparator>(key, payload.keyArr[i]) ? payload.downArr[i] : nullptr;
     }
 
     ReadWriteLatch *GetLatch() override {
@@ -603,8 +617,8 @@ class SkipList {
 
   };
 
-  BaseSkipListNode *createMaxUpperNode() {
-    return new SkipListNode((flags_t) NIL_NODE_FLAG);
+  NilSkipListNode *createMaxUpperNode() {
+    return new NilSkipListNode();
   }
 
   BaseSkipListNode *createMaxBottomNode() {
