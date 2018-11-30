@@ -456,10 +456,9 @@ class SkipList {
 #else
     private:
 #endif
-    struct internal_node_payload  {
-      KeyType keyArr[ARR_SIZE];
-      BaseSkipListNode *downArr[ARR_SIZE];
-    } payload;
+
+    KeyType keyArr[ARR_SIZE];
+    BaseSkipListNode *downArr[ARR_SIZE];
 
     int arraySize;
 
@@ -481,8 +480,8 @@ class SkipList {
         BaseSkipListNode{next},
         _ReadWriteLatch{}
          {
-           payload.keyArr[0] = key;
-           payload.downArr[0] = down;
+           keyArr[0] = key;
+           downArr[0] = down;
          }
 
     // for min and max keys
@@ -498,7 +497,7 @@ class SkipList {
         auto readLatch = ReadLatchRAII{_ReadWriteLatch};
       int i = -1;
       while (i < ARR_SIZE - 1) {
-        if(KeyCmpGreater<KeyType, KeyComparator>(payload.keyArr[i + 1], key))
+        if(KeyCmpGreater<KeyType, KeyComparator>(keyArr[i + 1], key))
           break;
         ++i;
       }
@@ -515,7 +514,7 @@ class SkipList {
     BaseSkipListNode *GetDown(const KeyType key) const override {
       auto i = ScanKey(key);
       if (i > -1)
-        return payload.downArr[i];
+        return downArr[i];
       return nullptr;
     }
 
@@ -543,10 +542,10 @@ class SkipList {
 
   class BottomSkipListNode: public BaseSkipListNode {
 
-    struct bottom_node_payload {
-      KeyType keyArr[ARR_SIZE];
-      ValueType downArr[ARR_SIZE];
-    } payload;
+
+    KeyType keyArr[ARR_SIZE];
+    ValueType downArr[ARR_SIZE];
+
 
     int arraySize;
 
@@ -587,7 +586,7 @@ class SkipList {
     int ScanKey(const KeyType key, UNUSED_ATTRIBUTE bool hasWriteLock = false) const override {
       int i = -1;
       while ((i < ARR_SIZE - 1) &&
-        (!KeyCmpLess<KeyType, KeyComparator>(key, payload.keyArr[i + 1]) || KeyCmpEqual<KeyType, KeyComparator>(key, payload.keyArr[i + 1]))
+        (!KeyCmpLess<KeyType, KeyComparator>(key, keyArr[i + 1]) || KeyCmpEqual<KeyType, KeyComparator>(key, keyArr[i + 1]))
       ) {
         ++i;
       }
@@ -596,7 +595,7 @@ class SkipList {
 
     ValueType GetData(const KeyType key) const override {
       int i = ScanKey(key);
-      return i > -1 && KeyCmpEqual<KeyType, KeyComparator>(key, payload.keyArr[i]) ? payload.downArr[i] : nullptr;
+      return i > -1 && KeyCmpEqual<KeyType, KeyComparator>(key, keyArr[i]) ? downArr[i] : nullptr;
     }
 
     ReadWriteLatch *GetLatch() override {
